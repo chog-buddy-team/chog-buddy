@@ -1,0 +1,8 @@
+{
+  "name": "chog-buddy",
+  "private": true,
+  "workspaces": ["packages/*", "app"],
+  "scripts": {
+    "test": "npm test --workspaces --if-present"
+  }
+}
