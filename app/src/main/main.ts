@@ -13,7 +13,8 @@ let walk: WalkState = { x: 0, dir: 1, pauseUntil: 0 };
 let dragging = false;
 let dragOffset = { x: 0, y: 0 };
 
-if (!app.requestSingleInstanceLock()) app.quit();
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) app.quit();
 app.dock?.hide();
 
 async function loadChog(tokenId: number): Promise<ChogMetadata> {
@@ -96,6 +97,7 @@ ipcMain.on('drag-start', () => {
   dragOffset = { x: p.x - x, y: p.y - y };
 });
 ipcMain.on('drag-move', (_e, p: { x: number; y: number }) => {
+  if (!Number.isFinite(p?.x) || !Number.isFinite(p?.y)) return;
   win?.setPosition(Math.round(p.x - dragOffset.x), Math.round(p.y - dragOffset.y));
 });
 ipcMain.on('drag-end', () => {
@@ -107,5 +109,10 @@ ipcMain.on('drag-end', () => {
   dragging = false;
 });
 
-app.whenReady().then(start);
+if (gotLock) {
+  app.whenReady().then(() => start().catch((e) => {
+    dialog.showErrorBox('Chog Buddy', String(e));
+    app.quit();
+  }));
+}
 app.on('window-all-closed', () => app.quit());

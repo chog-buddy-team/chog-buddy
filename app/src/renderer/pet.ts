@@ -33,6 +33,8 @@ function squash() {
   img.classList.add('squash');
 }
 
+img.addEventListener('animationend', () => img.classList.remove('squash'));
+
 // Drag vs click: movement over 4px means drag.
 let down: { x: number; y: number } | null = null;
 let dragging = false;
@@ -56,3 +58,11 @@ wrap.addEventListener('pointerup', () => {
   down = null;
   dragging = false;
 });
+
+function cancelDrag() {
+  if (dragging) window.chog.dragEnd();
+  down = null;
+  dragging = false;
+}
+wrap.addEventListener('pointercancel', cancelDrag);
+wrap.addEventListener('lostpointercapture', cancelDrag);
