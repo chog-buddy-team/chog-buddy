@@ -103,6 +103,7 @@ async function start() {
     if (perch && now > perch.until) perch = null;
     const [, curY] = win.getPosition();
     const a = workAreaFor(walk.x, curY);
+    if (perch && (Math.max(a.x, perch.bounds.x) > Math.min(a.x + a.width, perch.bounds.x + perch.bounds.width) - W)) perch = null;
     const minX = perch ? Math.max(a.x, perch.bounds.x) : a.x;
     const maxX = perch ? Math.min(a.x + a.width, perch.bounds.x + perch.bounds.width) - W : a.x + a.width - W;
     const y = perch ? perch.bounds.y - H + 24 : groundY(a);
@@ -113,7 +114,13 @@ async function start() {
   }, TICK_MS);
 
   const { activeWindow } = await import('get-windows');
+  let inFlight = false;
+  let lastSave = 0;
+  app.on('before-quit', () => saveSettings(app.getPath('userData'), settings));
   setInterval(async () => {
+    if (inFlight) return;
+    inFlight = true;
+    try {
     const w = await activeWindow({ accessibilityPermission: false, screenRecordingPermission: false }).catch(() => undefined);
     if (w && w.owner.processId === process.pid) return; // ignore ourselves
     const now = new Date();
@@ -123,7 +130,10 @@ async function start() {
     const day = dayKey(now);
     if (settings.today.day !== day) settings.today = { day, totals: emptyTotals() };
     settings.today.totals = addSample(settings.today.totals, category, POLL_MS / 1000, now.getHours());
-    saveSettings(app.getPath('userData'), settings);
+    if (Date.now() - lastSave > 60_000) {
+      lastSave = Date.now();
+      saveSettings(app.getPath('userData'), settings);
+    }
 
     const r = detectTrigger(reactions, { at: now.getTime(), category, hour: now.getHours(), day }, settings.focusMode);
     reactions = r.state;
@@ -131,8 +141,14 @@ async function start() {
     say(r.trigger);
     // Hop onto the active window's title bar sometimes, if it's big enough and not fullscreen-top.
     const b = w?.bounds;
-    if (r.trigger === 'category_switch' && b && b.width > W * 2 && b.y > 60 && Math.random() < 0.4) {
+    const [, py] = win!.getPosition();
+    const pa = workAreaFor(walk.x, py);
+    const inArea = !!b && b.x >= pa.x && b.x + b.width <= pa.x + pa.width && b.y > pa.y + 20 && b.y < pa.y + pa.height;
+    if (r.trigger === 'category_switch' && b && inArea && b.width > W * 2 && Math.random() < 0.4) {
       perch = { until: Date.now() + PERCH_MS, bounds: b };
+    }
+    } finally {
+      inFlight = false;
     }
   }, POLL_MS);
 
