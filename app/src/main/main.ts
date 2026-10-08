@@ -1,8 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerMonitor, screen, Tray } from 'electron';
 import path from 'node:path';
-import { fetchChogMetadata, ipfsToHttp, type ChogMetadata } from '@chog/core';
+import { ARCHETYPES, categorize, fetchChogMetadata, ipfsToHttp, pickArchetype, type ArchetypeId, type ChogMetadata } from '@chog/core';
 import { clampX, stepWalk, type WalkState } from './walker';
-import { loadSettings } from './store';
+import { loadSettings, saveSettings, type Settings } from './store';
+import { detectTrigger, initialState, pickLine, type ReactionState, type Trigger } from './reactions';
+import { addSample, dayKey, emptyTotals } from './tally';
 
 const W = 160;
 const H = 190;
@@ -12,6 +14,22 @@ let win: BrowserWindow | null = null;
 let walk: WalkState = { x: 0, dir: 1, pauseUntil: 0 };
 let dragging = false;
 let dragOffset = { x: 0, y: 0 };
+
+const POLL_MS = 5000;
+const PERCH_MS = 20_000;
+const TRAY_ICON =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAO0lEQVR4nGNgoAVozvv5HxumSDNRhhDSjNcQYjVjNYRUzRiGjBpABQMojkaqJCRiDcGrmZAhRGkmFQAAxjXGDD8V2pgAAAAASUVORK5CYII=';
+
+let settings: Settings;
+let archetype: ArchetypeId;
+let reactions: ReactionState = initialState(0);
+let lastCategory = categorize('');
+let perch: { until: number; bounds: Electron.Rectangle } | null = null;
+let tray: Tray | null = null;
+
+function say(trigger: Trigger) {
+  win?.webContents.send('say', pickLine(archetype, trigger, lastCategory));
+}
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
@@ -40,7 +58,7 @@ function groundY(area: Electron.Rectangle) {
 }
 
 async function start() {
-  const settings = loadSettings(app.getPath('userData'));
+  settings = loadSettings(app.getPath('userData'));
   const tokenId = Number(process.env.CHOG_TOKEN_ID ?? settings.tokenId);
 
   let meta: ChogMetadata;
@@ -51,6 +69,8 @@ async function start() {
     app.quit();
     return;
   }
+  archetype = pickArchetype(meta);
+  reactions = initialState(Date.now());
 
   const area = screen.getPrimaryDisplay().workArea;
   walk = { x: area.x + area.width / 2, dir: 1, pauseUntil: 0 };
@@ -80,13 +100,64 @@ async function start() {
     const dt = now - last;
     last = now;
     if (!win || dragging) return;
+    if (perch && now > perch.until) perch = null;
     const [, curY] = win.getPosition();
     const a = workAreaFor(walk.x, curY);
+    const minX = perch ? Math.max(a.x, perch.bounds.x) : a.x;
+    const maxX = perch ? Math.min(a.x + a.width, perch.bounds.x + perch.bounds.width) - W : a.x + a.width - W;
+    const y = perch ? perch.bounds.y - H + 24 : groundY(a);
     const prevDir = walk.dir;
-    walk = stepWalk({ ...walk, x: clampX(walk.x, a.x, a.x + a.width - W) }, now, dt, a.x, a.x + a.width - W);
+    walk = stepWalk({ ...walk, x: clampX(walk.x, minX, maxX) }, now, dt, minX, maxX);
     if (walk.dir !== prevDir) win.webContents.send('facing', walk.dir);
-    win.setPosition(Math.round(walk.x), groundY(a));
+    win.setPosition(Math.round(walk.x), Math.round(y));
   }, TICK_MS);
+
+  const { activeWindow } = await import('get-windows');
+  setInterval(async () => {
+    const w = await activeWindow({ accessibilityPermission: false, screenRecordingPermission: false }).catch(() => undefined);
+    if (w && w.owner.processId === process.pid) return; // ignore ourselves
+    const now = new Date();
+    const category = categorize(w?.owner.name ?? '', '', powerMonitor.getSystemIdleTime());
+    lastCategory = category;
+
+    const day = dayKey(now);
+    if (settings.today.day !== day) settings.today = { day, totals: emptyTotals() };
+    settings.today.totals = addSample(settings.today.totals, category, POLL_MS / 1000, now.getHours());
+    saveSettings(app.getPath('userData'), settings);
+
+    const r = detectTrigger(reactions, { at: now.getTime(), category, hour: now.getHours(), day }, settings.focusMode);
+    reactions = r.state;
+    if (!r.trigger) return;
+    say(r.trigger);
+    // Hop onto the active window's title bar sometimes, if it's big enough and not fullscreen-top.
+    const b = w?.bounds;
+    if (r.trigger === 'category_switch' && b && b.width > W * 2 && b.y > 60 && Math.random() < 0.4) {
+      perch = { until: Date.now() + PERCH_MS, bounds: b };
+    }
+  }, POLL_MS);
+
+  tray = new Tray(nativeImage.createFromDataURL(TRAY_ICON));
+  const rebuildMenu = () =>
+    tray!.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: `${meta.name} · ${ARCHETYPES[archetype].name}`, enabled: false },
+        { type: 'separator' },
+        {
+          label: 'Focus Mode',
+          type: 'checkbox',
+          checked: settings.focusMode,
+          click: (item) => {
+            settings.focusMode = item.checked;
+            saveSettings(app.getPath('userData'), settings);
+          },
+        },
+        { label: 'Poke your Chog', click: () => say('pet') },
+        { type: 'separator' },
+        { label: 'Quit', click: () => app.quit() },
+      ]),
+    );
+  tray.setToolTip('Chog Buddy');
+  rebuildMenu();
 }
 
 ipcMain.on('drag-start', () => {
@@ -108,6 +179,8 @@ ipcMain.on('drag-end', () => {
   win.setPosition(Math.round(walk.x), groundY(a)); // drop to the ground
   dragging = false;
 });
+
+ipcMain.on('pet-click', () => say('pet'));
 
 if (gotLock) {
   app.whenReady().then(() => start().catch((e) => {
