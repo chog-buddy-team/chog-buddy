@@ -75,9 +75,9 @@ function drawHead(b: PixelBuffer, p: ChogParts, pose: Pose, oy: number) {
   b.blit(p.face, FACE_X, cy - HEAD_CY + FACE_Y, inHead);
   if (pose.eyesClosed) {
     const ey = cy - HEAD_CY + FACE_Y;
-    b.fillRect(FACE_X, ey + 4, FACE_W, 7, p.palette.skin);
-    b.fillRect(FACE_X + 4, ey + 8, 6, 1, p.palette.ink);
-    b.fillRect(FACE_X + 17, ey + 8, 6, 1, p.palette.ink);
+    b.fillRect(FACE_X, ey + 2, FACE_W, 13, p.palette.skin); // rows +2..+14; mouth/blush below stay visible
+    b.fillRect(FACE_X + 4, ey + 9, 6, 1, p.palette.ink);
+    b.fillRect(FACE_X + 17, ey + 9, 6, 1, p.palette.ink);
   }
   drawHat(b, p, cy - ry);
 }

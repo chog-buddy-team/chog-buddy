@@ -1,4 +1,4 @@
-import { ATLAS_ROWS, FRAME_H, FRAME_W, PixelBuffer, buildAtlas, extractFace, frameAt, hatStyle, outfitStyle, samplePalette, type AnimName } from '@chog/core';
+import { ATLAS_ROWS, FRAME_H, FRAME_W, PixelBuffer, buildAtlas, extractFace, frameAt, hatStyle, outfitStyle, samplePalette, type AnimName } from '../../../packages/core/src/sprite'; // sprite-only: keeps viem out of the renderer bundle
 import type { ChogApi, InitPayload } from '../preload';
 
 declare global {
@@ -12,6 +12,7 @@ let atlas: HTMLCanvasElement | null = null;
 let anim: AnimName = 'idle';
 let animStart = performance.now();
 let paused = false;
+let lastDir: 1 | -1 = 1;
 let hideTimer: number | undefined;
 
 async function decode(bytes: Uint8Array): Promise<PixelBuffer> {
@@ -46,21 +47,37 @@ window.chog.onInit((p) => {
 });
 
 window.chog.onAnim((a) => {
-  if (a.anim !== anim) {
+  const changed = a.anim !== anim;
+  const wasPaused = paused;
+  if (changed) {
     anim = a.anim;
     animStart = performance.now();
+    if (anim === 'walkEast') lastDir = 1;
+    else if (anim === 'walkWest') lastDir = -1;
   }
   paused = a.paused;
+  if (paused && (!wasPaused || changed)) drawFrame(0);
 });
+
+function drawFrame(col: number) {
+  if (!atlas) return;
+  const spec = ATLAS_ROWS[anim];
+  const mirror = lastDir === -1 && anim !== 'walkEast' && anim !== 'walkWest';
+  ctx.clearRect(0, 0, FRAME_W, FRAME_H);
+  ctx.imageSmoothingEnabled = false;
+  ctx.save();
+  if (mirror) {
+    ctx.translate(FRAME_W, 0);
+    ctx.scale(-1, 1);
+  }
+  ctx.drawImage(atlas, col * FRAME_W, spec.row * FRAME_H, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
+  ctx.restore();
+}
 
 function draw(now: number) {
   requestAnimationFrame(draw);
   if (!atlas || paused) return;
-  const spec = ATLAS_ROWS[anim];
-  const col = frameAt(spec.durationsMs, now - animStart);
-  ctx.clearRect(0, 0, FRAME_W, FRAME_H);
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(atlas, col * FRAME_W, spec.row * FRAME_H, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
+  drawFrame(frameAt(ATLAS_ROWS[anim].durationsMs, now - animStart));
 }
 requestAnimationFrame(draw);
 

@@ -28,6 +28,17 @@ describe('drawChogFrame', () => {
     const f = drawChogFrame(parts(), { ...REST, eyesClosed: true });
     expect(f.get(10 + 21, 15 + 7)).not.toEqual(hex('#000000'));
   });
+  it('eyesClosed hides eye pixels anywhere in face rows 3..13', () => {
+    for (let y = 3; y <= 13; y++) {
+      const p = parts();
+      p.face.fillRect(0, 0, FACE_W, FACE_H, hex('#6a3d2b'));
+      p.face.fillRect(4, y, 3, 1, hex('#000000'));
+      p.face.fillRect(21, y, 3, 1, hex('#000000'));
+      const f = drawChogFrame(p, { ...REST, eyesClosed: true });
+      for (let x = 0; x < FACE_W; x++) for (let fy = 3; fy <= 13; fy++)
+        if (fy !== 9) expect(f.get(10 + x, 15 + fy)).not.toEqual(hex('#000000'));
+    }
+  });
   it('lift moves the whole sprite up', () => {
     const a = drawChogFrame(parts(), REST);
     const b = drawChogFrame(parts(), { ...REST, lift: 3 });

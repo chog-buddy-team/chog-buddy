@@ -6,7 +6,7 @@ import { clampX, stepWalk, type WalkState } from './walker';
 import { loadSettings, saveSettings, type Settings } from './store';
 import { detectTrigger, initialState, pickLine, type ReactionState, type Trigger } from './reactions';
 import { addSample, dayKey, emptyTotals } from './tally';
-import { chooseAnimation, REACT_MS, TALK_MS } from './animState';
+import { chooseAnimation, PAUSE_SEC, REACT_MS, TALK_MS } from './animState';
 import { petdexFolderName, petdexManifest } from './petdex';
 
 const W = 192;
@@ -30,6 +30,7 @@ let lastCategory = categorize('');
 let perch: { until: number; bounds: Electron.Rectangle } | null = null;
 let tray: Tray | null = null;
 let atlasPng: Buffer | null = null;
+let rebuildMenu: (() => void) | null = null;
 let reactUntil = 0;
 let talkUntil = 0;
 let lastAnimKey = '';
@@ -160,7 +161,7 @@ async function start() {
   app.on('before-quit', () => saveSettings(app.getPath('userData'), settings));
   setInterval(async () => {
     if (inFlight) return;
-    if (powerMonitor.getSystemIdleTime() >= 900) return; // paused: nothing to observe
+    if (powerMonitor.getSystemIdleTime() >= PAUSE_SEC) return; // paused: nothing to observe
     inFlight = true;
     try {
     const w = await activeWindow({ accessibilityPermission: false, screenRecordingPermission: false }).catch(() => undefined);
@@ -195,7 +196,7 @@ async function start() {
   }, POLL_MS);
 
   tray = new Tray(nativeImage.createFromDataURL(TRAY_ICON));
-  const rebuildMenu = () =>
+  rebuildMenu = () =>
     tray!.setContextMenu(
       Menu.buildFromTemplate([
         { label: `${meta.name} · ${ARCHETYPES[archetype].name}`, enabled: false },
@@ -212,14 +213,21 @@ async function start() {
         { label: 'Poke your Chog', click: () => poke() },
         {
           label: 'Export for Codex/Petdex…',
+          enabled: !!atlasPng,
           click: async () => {
             if (!atlasPng) return;
             const r = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'], title: 'Choose a folder for your Chog sprite' });
             if (r.canceled || !r.filePaths[0]) return;
             const dir = path.join(r.filePaths[0], petdexFolderName(meta.tokenId));
-            mkdirSync(dir, { recursive: true });
-            writeFileSync(path.join(dir, 'spritesheet.png'), atlasPng);
-            writeFileSync(path.join(dir, 'pet.json'), JSON.stringify(petdexManifest(meta, ARCHETYPES[archetype].name), null, 2));
+            try {
+              mkdirSync(dir, { recursive: true });
+              writeFileSync(path.join(dir, 'spritesheet.png'), atlasPng);
+              writeFileSync(path.join(dir, 'pet.json'), JSON.stringify(petdexManifest(meta, ARCHETYPES[archetype].name), null, 2));
+            } catch (e) {
+              dialog.showErrorBox('Chog Buddy', 'Export failed: ' + (e instanceof Error ? e.message : String(e)));
+              return;
+            }
+            dialog.showMessageBox({ message: 'Saved to ' + dir });
           },
         },
         { type: 'separator' },
@@ -254,6 +262,7 @@ ipcMain.on('pet-click', () => poke());
 ipcMain.on('atlas-ready', (_e, png: Uint8Array) => {
   if (!(png instanceof Uint8Array) || png.byteLength > 20_000_000) return;
   atlasPng = Buffer.from(png);
+  rebuildMenu?.();
   if (process.env.CHOG_DUMP_ATLAS) writeFileSync(path.join(app.getPath('userData'), 'atlas.png'), atlasPng);
 });
 ipcMain.on('atlas-error', (_e, message: string) => {
