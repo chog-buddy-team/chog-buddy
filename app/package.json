@@ -1,0 +1,23 @@
+{
+  "name": "chog-buddy-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chog Buddy desktop pet",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p .",
+    "build": "node build.mjs",
+    "start": "npm run build && electron ."
+  },
+  "dependencies": {
+    "@chog/core": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "electron": "^44.7.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}
