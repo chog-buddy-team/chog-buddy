@@ -39,6 +39,12 @@ describe('drawChogFrame', () => {
       for (const h of ['cap', 'bucket', 'wizard', 'horns', 'headband', 'crown', 'none'] as const)
         expect(filled(drawChogFrame(parts(o, h), REST))).toBeGreaterThan(500);
   });
+  it('no hat style touches row 0, at the highest pose the atlas uses', () => {
+    const topmost = (x: PixelBuffer) => { for (let y = 0; y < x.height; y++) for (let i = 0; i < x.width; i++) if (x.isFilled(i, y)) return y; return -1; };
+    for (const h of ['cap', 'bucket', 'wizard', 'horns', 'headband', 'crown', 'none'] as const)
+      for (const pose of [REST, { ...REST, lift: 3 }, { ...REST, headDy: -1 }])
+        expect(topmost(drawChogFrame(parts('suit', h), pose))).toBeGreaterThanOrEqual(1);
+  });
   it('is deterministic', () => {
     expect(drawChogFrame(parts(), REST).data).toEqual(drawChogFrame(parts(), REST).data);
   });

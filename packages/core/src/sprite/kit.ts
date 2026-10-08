@@ -94,9 +94,9 @@ function drawHat(b: PixelBuffer, p: ChogParts, top: number) {
       b.fillEllipse(CX, top + 7, 20, 2.5, hatShade);
       break;
     case 'wizard':
-      for (let k = 0; k <= 12; k++) {
-        const w = Math.round(k * 0.9);
-        b.fillRect(CX - w, top - 9 + k, 2 * w + 1, 1, hat);
+      for (let k = 0; k <= 8; k++) {
+        const w = Math.round(k * 1.25);
+        b.fillRect(CX - w, top - 5 + k, 2 * w + 1, 1, hat);
       }
       b.fillEllipse(CX, top + 4, 17, 2.5, hatShade);
       break;

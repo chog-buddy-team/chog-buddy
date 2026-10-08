@@ -23,11 +23,11 @@ const ROWS: Record<AnimName, RowSpec> = {
   walkEast: { row: 1, durationsMs: [120, 120, 120, 120, 120, 120, 120, 220], poses: WALK },
   walkWest: { row: 2, durationsMs: [120, 120, 120, 120, 120, 120, 120, 220], poses: WALK, mirror: true },
   react: { row: 3, durationsMs: [140, 140, 140, 280], poses: [{ squash: 1 }, { headDy: 1, squash: 1 }, { lift: 2, armL: -2, armR: -2 }, {}] },
-  hop: { row: 4, durationsMs: [140, 140, 140, 140, 280], poses: [{ squash: 1 }, { lift: 3 }, { lift: 5, armL: -2, armR: -2 }, { lift: 3 }, { squash: 1 }] },
+  hop: { row: 4, durationsMs: [140, 140, 140, 140, 280], poses: [{ squash: 1 }, { lift: 2 }, { lift: 3, armL: -2, armR: -2 }, { lift: 2 }, { squash: 1 }] },
   sleep: { row: 5, durationsMs: [400, 400, 400, 400, 400, 400], poses: [0, 0, 1, 1, 1, 0].map((d) => ({ headDy: d, eyesClosed: true })) },
   talk: { row: 6, durationsMs: [150, 150, 150, 150, 150, 280], poses: [-3, -4, -3, -4, -3, 0].map((a, i) => ({ armR: a, headDy: i % 2 ? -1 : 0 })) },
   sad: { row: 7, durationsMs: [300, 300, 300, 300, 300, 300], poses: [0, 0, 1, 1, 0, 0].map((d) => ({ headDy: 1 + d, armL: 1, armR: 1 })) },
-  celebrate: { row: 8, durationsMs: [150, 150, 150, 150, 150, 280], poses: [0, 3, 5, 3, 0, 0].map((l) => ({ lift: l, armL: -4, armR: -4 })) },
+  celebrate: { row: 8, durationsMs: [150, 150, 150, 150, 150, 280], poses: [0, 2, 3, 2, 0, 0].map((l) => ({ lift: l, armL: -4, armR: -4 })) },
 };
 
 export const ATLAS_ROWS: Record<AnimName, { row: number; durationsMs: number[] }> = Object.fromEntries(
