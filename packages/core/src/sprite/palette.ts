@@ -20,6 +20,20 @@ function forSide(r: Region, side: Side): Region {
   return side === 'Left' ? { ...r, x: 1 - r.x - r.w } : r;
 }
 
+/** Add colour to the 4-bit histogram bucket map. */
+function addToBucket(buckets: Map<string, { n: number; s: [number, number, number] }>, c: Rgba): void {
+  const k = `${c[0] >> 4},${c[1] >> 4},${c[2] >> 4}`;
+  const e = buckets.get(k) ?? { n: 0, s: [0, 0, 0] };
+  e.n++;
+  e.s = [e.s[0] + c[0], e.s[1] + c[1], e.s[2] + c[2]];
+  buckets.set(k, e);
+}
+
+/** Convert a bucket entry to its averaged Rgba. */
+function bucketAverage(e: { n: number; s: [number, number, number] }): Rgba {
+  return [Math.round(e.s[0] / e.n), Math.round(e.s[1] / e.n), Math.round(e.s[2] / e.n), 255];
+}
+
 /** Average colour of the most common 4-bit bucket in a region, skipping ink-dark and avoided colours. */
 function modeColor(img: PixelBuffer, r: Region, avoid: Rgba[], skipDark = true): Rgba | null {
   const x0 = Math.floor(r.x * img.width), y0 = Math.floor(r.y * img.height);
@@ -30,14 +44,10 @@ function modeColor(img: PixelBuffer, r: Region, avoid: Rgba[], skipDark = true):
     for (let x = x0; x < x1; x += step) {
       const c = img.get(x, y);
       if (c[3] < 128 || (skipDark && lum(c) < 140) || avoid.some((a) => dist(a, c) < 55)) continue;
-      const k = `${c[0] >> 4},${c[1] >> 4},${c[2] >> 4}`;
-      const e = buckets.get(k) ?? { n: 0, s: [0, 0, 0] };
-      e.n++;
-      e.s = [e.s[0] + c[0], e.s[1] + c[1], e.s[2] + c[2]];
-      buckets.set(k, e);
+      addToBucket(buckets, c);
     }
   const best = [...buckets.values()].sort((a, b) => b.n - a.n)[0];
-  return best ? [Math.round(best.s[0] / best.n), Math.round(best.s[1] / best.n), Math.round(best.s[2] / best.n), 255] : null;
+  return best ? bucketAverage(best) : null;
 }
 
 export function samplePalette(nft: PixelBuffer, side: Side): ChogPalette {
@@ -57,16 +67,12 @@ export function quantize(buf: PixelBuffer, maxColors: number): PixelBuffer {
     for (let x = 0; x < buf.width; x++) {
       const c = buf.get(x, y);
       if (c[3] === 0) continue;
-      const k = `${c[0] >> 4},${c[1] >> 4},${c[2] >> 4}`;
-      const e = buckets.get(k) ?? { n: 0, s: [0, 0, 0] };
-      e.n++;
-      e.s = [e.s[0] + c[0], e.s[1] + c[1], e.s[2] + c[2]];
-      buckets.set(k, e);
+      addToBucket(buckets, c);
     }
   const pal: Rgba[] = [...buckets.values()]
     .sort((a, b) => b.n - a.n)
     .slice(0, maxColors)
-    .map((e) => [Math.round(e.s[0] / e.n), Math.round(e.s[1] / e.n), Math.round(e.s[2] / e.n), 255]);
+    .map((e) => bucketAverage(e));
   const out = new PixelBuffer(buf.width, buf.height);
   for (let y = 0; y < buf.height; y++)
     for (let x = 0; x < buf.width; x++) {
