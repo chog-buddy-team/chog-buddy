@@ -8,7 +8,8 @@
     "test": "vitest run",
     "typecheck": "tsc -p .",
     "build": "node build.mjs",
-    "start": "npm run build && electron ."
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder --publish never"
   },
   "dependencies": {
     "@chog/core": "*",
@@ -17,8 +18,40 @@
   "devDependencies": {
     "@types/node": "^26.6.4",
     "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"
+  },
+  "build": {
+    "appId": "xyz.chog.buddy",
+    "productName": "Chog Buddy",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/get-windows/**"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.entertainment",
+      "identity": null
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "electronVersion": "44.7.0"
   }
 }
