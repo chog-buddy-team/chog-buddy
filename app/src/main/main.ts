@@ -1,12 +1,13 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerMonitor, screen, Tray } from 'electron';
 import path from 'node:path';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { ARCHETYPES, categorize, fetchChogMetadata, ipfsToHttp, pickArchetype, type ArchetypeId, type ChogMetadata } from '@chog/core';
 import { clampX, stepWalk, type WalkState } from './walker';
 import { loadSettings, saveSettings, type Settings } from './store';
 import { detectTrigger, initialState, pickLine, type ReactionState, type Trigger } from './reactions';
 import { addSample, dayKey, emptyTotals } from './tally';
 import { chooseAnimation, REACT_MS, TALK_MS } from './animState';
+import { petdexFolderName, petdexManifest } from './petdex';
 
 const W = 192;
 const H = 260; // 208 sprite + room for the speech bubble
@@ -209,6 +210,18 @@ async function start() {
           },
         },
         { label: 'Poke your Chog', click: () => poke() },
+        {
+          label: 'Export for Codex/Petdex…',
+          click: async () => {
+            if (!atlasPng) return;
+            const r = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'], title: 'Choose a folder for your Chog sprite' });
+            if (r.canceled || !r.filePaths[0]) return;
+            const dir = path.join(r.filePaths[0], petdexFolderName(meta.tokenId));
+            mkdirSync(dir, { recursive: true });
+            writeFileSync(path.join(dir, 'spritesheet.png'), atlasPng);
+            writeFileSync(path.join(dir, 'pet.json'), JSON.stringify(petdexManifest(meta, ARCHETYPES[archetype].name), null, 2));
+          },
+        },
         { type: 'separator' },
         { label: 'Quit', click: () => app.quit() },
       ]),
