@@ -8,9 +8,12 @@ export const traitValue = (attributes: Trait[], type: string) => attributes.find
 export function outfitStyle(attributes: Trait[]): OutfitStyle {
   const body = traitValue(attributes, 'Body');
   if (!body || traitValue(attributes, 'Naked') === 'Yes') return 'bare';
-  if (/tuxedo|suit|blazer/i.test(body)) return 'suit';
+  // Costume suits map to shirt
+  if (/astro|banana|dragon|shark|toad/i.test(body)) return 'shirt';
+  // Business suits
+  if (/tuxedo|blazer|gangster suit/i.test(body)) return 'suit';
   if (/hoodie|jacket|zip|sweater/i.test(body)) return 'hoodie';
-  if (/robe|chinese|kimono|gown|cloak/i.test(body)) return 'robe';
+  if (/robe|chinese|kimono|gown|cloak|yukata|cape|wizard|jesus/i.test(body)) return 'robe';
   return 'shirt';
 }
 
@@ -18,8 +21,8 @@ export function outfitStyle(attributes: Trait[]): OutfitStyle {
 const HAT_RULES: Array<[HatStyle, RegExp]> = [
   ['wizard', /wizard/i],
   ['bucket', /bucket/i],
-  ['horns', /horn/i],
-  ['headband', /band|bandana/i],
+  ['horns', /\bhorns?\b/i],
+  ['headband', /band/i],
   ['crown', /crown|halo/i],
   ['cap', /cap|hat|beanie/i],
 ];
