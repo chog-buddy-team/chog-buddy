@@ -1,24 +1,68 @@
-import type { ChogApi } from '../preload';
+import { ATLAS_ROWS, FRAME_H, FRAME_W, PixelBuffer, buildAtlas, extractFace, frameAt, hatStyle, outfitStyle, samplePalette, type AnimName } from '@chog/core';
+import type { ChogApi, InitPayload } from '../preload';
 
 declare global {
   interface Window { chog: ChogApi }
 }
 
-const img = document.getElementById('chog') as HTMLImageElement;
+const pet = document.getElementById('pet') as HTMLCanvasElement;
+const ctx = pet.getContext('2d')!;
 const bubble = document.getElementById('bubble') as HTMLDivElement;
-const wrap = document.getElementById('wrap') as HTMLDivElement;
-
-let side: 'Left' | 'Right' = 'Right';
+let atlas: HTMLCanvasElement | null = null;
+let anim: AnimName = 'idle';
+let animStart = performance.now();
+let paused = false;
 let hideTimer: number | undefined;
 
+async function decode(bytes: Uint8Array): Promise<PixelBuffer> {
+  const bmp = await createImageBitmap(new Blob([bytes as BlobPart]));
+  const c = new OffscreenCanvas(bmp.width, bmp.height);
+  const g = c.getContext('2d')!;
+  g.drawImage(bmp, 0, 0);
+  const d = g.getImageData(0, 0, bmp.width, bmp.height);
+  return new PixelBuffer(d.width, d.height, d.data);
+}
+
+async function build(p: InitPayload) {
+  const nft = await decode(p.imageBytes);
+  const atlasBuf = buildAtlas({
+    palette: samplePalette(nft, p.side),
+    face: extractFace(nft, p.side),
+    outfit: outfitStyle(p.attributes),
+    hat: hatStyle(p.attributes),
+  });
+  const c = document.createElement('canvas');
+  c.width = atlasBuf.width;
+  c.height = atlasBuf.height;
+  c.getContext('2d')!.putImageData(new ImageData(atlasBuf.data as ImageDataArray, atlasBuf.width, atlasBuf.height), 0, 0);
+  atlas = c;
+  pet.title = p.name;
+  const blob = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/png'));
+  if (blob) window.chog.atlasReady(new Uint8Array(await blob.arrayBuffer()));
+}
+
 window.chog.onInit((p) => {
-  img.src = p.image;
-  img.title = p.name;
-  side = p.side;
+  build(p).catch((e) => window.chog.atlasError(String(e)));
 });
 
-// Art faces `side`; flip when walking the other way.
-window.chog.onFacing((dir) => img.classList.toggle('flip', (dir === 1) !== (side === 'Right')));
+window.chog.onAnim((a) => {
+  if (a.anim !== anim) {
+    anim = a.anim;
+    animStart = performance.now();
+  }
+  paused = a.paused;
+});
+
+function draw(now: number) {
+  requestAnimationFrame(draw);
+  if (!atlas || paused) return;
+  const spec = ATLAS_ROWS[anim];
+  const col = frameAt(spec.durationsMs, now - animStart);
+  ctx.clearRect(0, 0, FRAME_W, FRAME_H);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(atlas, col * FRAME_W, spec.row * FRAME_H, FRAME_W, FRAME_H, 0, 0, FRAME_W, FRAME_H);
+}
+requestAnimationFrame(draw);
 
 window.chog.onSay((text) => {
   bubble.textContent = text;
@@ -27,23 +71,15 @@ window.chog.onSay((text) => {
   hideTimer = window.setTimeout(() => bubble.classList.remove('show'), 6000);
 });
 
-function squash() {
-  img.classList.remove('squash');
-  void img.offsetWidth; // restart animation
-  img.classList.add('squash');
-}
-
-img.addEventListener('animationend', () => img.classList.remove('squash'));
-
 // Drag vs click: movement over 4px means drag.
 let down: { x: number; y: number } | null = null;
 let dragging = false;
-wrap.addEventListener('pointerdown', (e) => {
+pet.addEventListener('pointerdown', (e) => {
   down = { x: e.screenX, y: e.screenY };
   dragging = false;
-  wrap.setPointerCapture(e.pointerId);
+  pet.setPointerCapture(e.pointerId);
 });
-wrap.addEventListener('pointermove', (e) => {
+pet.addEventListener('pointermove', (e) => {
   if (!down) return;
   if (!dragging && Math.hypot(e.screenX - down.x, e.screenY - down.y) > 4) {
     dragging = true;
@@ -51,18 +87,16 @@ wrap.addEventListener('pointermove', (e) => {
   }
   if (dragging) window.chog.dragMove(e.screenX, e.screenY);
 });
-wrap.addEventListener('pointerup', () => {
+pet.addEventListener('pointerup', () => {
   if (dragging) window.chog.dragEnd();
   else window.chog.petClick();
-  squash();
   down = null;
   dragging = false;
 });
-
 function cancelDrag() {
   if (dragging) window.chog.dragEnd();
   down = null;
   dragging = false;
 }
-wrap.addEventListener('pointercancel', cancelDrag);
-wrap.addEventListener('lostpointercapture', cancelDrag);
+pet.addEventListener('pointercancel', cancelDrag);
+pet.addEventListener('lostpointercapture', cancelDrag);
