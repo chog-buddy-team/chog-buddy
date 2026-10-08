@@ -44,7 +44,7 @@ const defaultReadTokenURI = (id: bigint) =>
   mainnetClient.readContract({ address: CHOG_CONTRACT, abi: chogAbi, functionName: 'tokenURI', args: [id] });
 
 const defaultFetchJson = async (url: string) => {
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error(`Metadata fetch failed: ${res.status} ${url}`);
   return res.json();
 };

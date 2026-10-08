@@ -4,7 +4,7 @@ import type { Trigger } from './reactions';
 export const LINES: Record<ArchetypeId, Record<Trigger, string[]>> = {
   hype: {
     category_switch: ['{category} time?! LET\'S GOOO', 'Ooh {category}. You\'re gonna crush this.', '{category} mode: ACTIVATED.', 'New lane, same legend. Go!'],
-    long_session: ['90 minutes straight. Absolute legend. Drink water tho.', 'You\'re ON FIRE. Stretch so you stay on fire.', 'Two hours of heat. You\'re unstoppable.', 'Keep cooking, but hydrate, champ!'],
+    long_session: ['90 minutes straight. Absolute legend. Drink water tho.', 'You\'re ON FIRE. Stretch so you stay on fire.', 'Ninety minutes of heat. You\'re unstoppable.', 'Keep cooking, but hydrate, champ!'],
     idle_return: ['YOU\'RE BACK! I counted every second.', 'Welcome back champ, let\'s run it.', 'Look who\'s back! Let\'s GO.', 'I saved your seat. Let\'s win.'],
     late_night: ['Late night grind hits different. Don\'t forget sleep exists.', 'It\'s past midnight and we\'re still cooking.', 'Night shift energy! Respect.', 'Late but legendary. Sleep soon, hero!'],
     morning: ['GOOD MORNING! Today\'s a W, I can feel it.', 'Rise and grind, partner!', 'Morning! Today\'s gonna be huge.', 'Up and at \'em, superstar!'],
@@ -13,7 +13,7 @@ export const LINES: Record<ArchetypeId, Record<Trigger, string[]>> = {
   },
   grump: {
     category_switch: ['{category}. Great. Wake me when it\'s interesting.', 'Oh, {category} now. Sure.', '{category}. Wonderful. Another thing.', 'Switching again? Decide already.'],
-    long_session: ['Ninety minutes. Your spine is filing a complaint.', 'Still at it? Fine. Blink at least.', 'Two hours. Do you even own a chair?', 'Go outside. Ugh, I said it.'],
+    long_session: ['Ninety minutes. Your spine is filing a complaint.', 'Still at it? Fine. Blink at least.', 'Ninety minutes. Do you even own a chair?', 'Go outside. Ugh, I said it.'],
     idle_return: ['Oh. You\'re back. I was enjoying the quiet.', 'Took you long enough.', 'Back already? Pity.', 'You smell like procrastination. Welcome back.'],
     late_night: ['It\'s 2am. Even I want to sleep.', 'Nobody good is awake right now. Including you.', 'Go to bed. I\'m not asking nicely.', 'Late nights are overrated. So are you.'],
     morning: ['Morning. Don\'t talk to me yet.', 'Ugh. Daylight. Fine, hello.', 'Too bright. Too early. Hello.', 'Morning is a scam.'],
@@ -31,10 +31,10 @@ export const LINES: Record<ArchetypeId, Record<Trigger, string[]>> = {
   },
   chaos: {
     category_switch: ['{category}!!! I\'m gonna press every button.', 'Switching to {category}? Chaos approved.', '{category}?! Plot twist!', 'Oh we\'re doing {category} now. I\'m in.'],
-    long_session: ['90 minutes?! Let\'s do something unhinged to celebrate.', 'You\'ve been here so long I named your keyboard Greg.', 'Two hours! I built a fort out of your tabs.', 'Your chair has achieved sentience, you know.'],
+    long_session: ['90 minutes?! Let\'s do something unhinged to celebrate.', 'You\'ve been here so long I named your keyboard Greg.', 'Ninety minutes! I built a fort out of your tabs.', 'Your chair has achieved sentience, you know.'],
     idle_return: ['YOU LEFT ME ALONE WITH THE CURSOR.', 'I rearranged nothing. Probably.', 'You\'re back! I did NOTHING suspicious.', 'I may have moved your icons. Surprise.'],
     late_night: ['3am is when the real magic happens. Or bugs. Same thing.', 'Midnight crew! Nobody can stop us now.', 'Sleep is a social construct. But still, sleep.', 'Night owl mode, with extra chaos.'],
-    morning: ['Morning! I already had 4 coffees. Metaphorically.', 'NEW DAY NEW CHAOS.', 'Morning! The cat is probably plotting.', 'Today we ride at dawn. Or noon.'],
+    morning: ['Morning! I already had 4 coffees. Metaphorically.', 'NEW DAY NEW CHAOS.', 'Morning! The coffee machine and I have a plan.', 'Today we ride at dawn. Or noon.'],
     focus_violation: ['Even I think you should focus. That\'s saying something.', 'Video? Bold. Wrong, but bold.', 'FOCUS! Wait, why am I the responsible one?', 'Close it before I do something dramatic.'],
     pet: ['WHEEE!', 'Do it again and I\'ll explode (lovingly).', 'Boop accepted. Chaos intensifies.', 'Again again again!'],
   },

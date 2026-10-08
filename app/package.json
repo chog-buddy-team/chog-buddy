@@ -12,10 +12,10 @@
     "dist": "npm run build && electron-builder --publish never"
   },
   "dependencies": {
-    "@chog/core": "*",
     "get-windows": "^9.3.0"
   },
   "devDependencies": {
+    "@chog/core": "*",
     "@types/node": "^26.6.4",
     "electron": "^44.7.0",
     "electron-builder": "^26.15.3",

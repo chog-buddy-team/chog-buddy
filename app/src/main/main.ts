@@ -31,6 +31,11 @@ function say(trigger: Trigger) {
   win?.webContents.send('say', pickLine(archetype, trigger, lastCategory));
 }
 
+function poke() {
+  say('pet');
+  reactions = { ...reactions, lastSpokeAt: Date.now() };
+}
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
 app.dock?.hide();
@@ -88,6 +93,8 @@ async function start() {
     focusable: false,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs') },
   });
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.setAlwaysOnTop(true, 'screen-saver');
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   await win.loadFile(path.join(__dirname, 'index.html'));
@@ -167,7 +174,7 @@ async function start() {
             saveSettings(app.getPath('userData'), settings);
           },
         },
-        { label: 'Poke your Chog', click: () => say('pet') },
+        { label: 'Poke your Chog', click: () => poke() },
         { type: 'separator' },
         { label: 'Quit', click: () => app.quit() },
       ]),
@@ -196,7 +203,7 @@ ipcMain.on('drag-end', () => {
   dragging = false;
 });
 
-ipcMain.on('pet-click', () => say('pet'));
+ipcMain.on('pet-click', () => poke());
 
 if (gotLock) {
   app.whenReady().then(() => start().catch((e) => {
