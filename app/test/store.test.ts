@@ -1,0 +1,24 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { loadSettings, saveSettings } from '../src/main/store';
+
+describe('settings store', () => {
+  it('returns defaults when no file exists', () => {
+    const s = loadSettings(mkdtempSync(join(tmpdir(), 'chog-')));
+    expect(s.tokenId).toBe(5);
+    expect(s.focusMode).toBe(false);
+  });
+  it('round-trips', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    const s = loadSettings(dir);
+    saveSettings(dir, { ...s, tokenId: 42, focusMode: true });
+    expect(loadSettings(dir)).toMatchObject({ tokenId: 42, focusMode: true });
+  });
+  it('survives a corrupt file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    writeFileSync(join(dir, 'settings.json'), '{not json');
+    expect(loadSettings(dir).tokenId).toBe(5);
+  });
+});

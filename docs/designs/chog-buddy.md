@@ -37,7 +37,7 @@ Chog Buddy: your Chog NFT becomes an animated desktop pet (Mac + Windows) that r
 - **Signing:** ship unsigned installers with clear Gatekeeper/SmartScreen bypass steps and a GIF, first in testing instructions.
 - **Presence:** ~120px sprite walks along the Dock/taskbar edge, perches on the active window's title bar, can be dragged and thrown.
 - **Interaction:** click to pet, small chat box, focus mode (Chog scolds you on distracting apps/sites).
-- **Animation:** whole-image procedural animation (bob, squash, tilt, hop, flip by direction) plus generic blink/mouth overlays positioned using the Side trait. Ask the Chog team in Discord for trait layers; upgrade if provided.
+- **Animation:** superseded by "Pet visuals: pixel sprite kit" below (2026-10-08). The original plan animated the flat NFT image; the shipped v0 did that and it read as a floating picture, not a character.
 - **Ownership:** SIWE in a browser popup; server checks ownership (Alchemy NFT API free tier on Monad, fallback `ownerOf` via public RPC). Re-check daily. If the Chog was sold, the pet leaves and the local diary is wiped.
 - **Multiple Chogs:** one active pet, swappable from the tray menu. Only the active Chog's soul drifts.
 - **Activity data:** app names + durations by default; window titles opt-in. Titles are categorized locally (coding / design / chat / browsing / video / meeting). Only categories and durations leave the machine.
@@ -48,6 +48,19 @@ Chog Buddy: your Chog NFT becomes an animated desktop pet (Mac + Windows) that r
 - **Judge mode:** a labeled demo option that loads a fixed Chog read-only (no soul writes) for judges without a Chog.
 - **Backend:** Next.js on Vercel free tier + Neon Postgres free. Hosts SIWE, LLM proxy, ownership check, daily soul cron, (later) settlement oracle and Chog Park.
 - **App:** Electron.
+
+## Pet visuals: pixel sprite kit (decided 2026-10-08)
+Problem: every Chog NFT is a tightly cropped three-quarter bust (head runs off the top/right edge, body cut at the collar), so neither a background cut-out nor a 3D reconstruction gives a whole, walkable character. A trial 3D build (img2threejs) and a trial pixel build with invented faces were both rejected: the 3D could not be judged against a cropped bust, and invented eyes did not look like the owner's Chog.
+
+Decision: a **2D pixel Chog assembled from a shared body kit plus the real NFT face**, packed as a **Petdex/Codex-format sprite atlas**.
+- **Body kit (one kit, animated once):** pixel parts drawn in code at 48x52 logical px, scaled 4x nearest-neighbour to the 192x208 frame. Parts: round head shell, gill spikes (3 per side), torso/outfit, arms, legs/feet, hat. Animation is by part offsets per frame (bob, leg swing, arm swing, squash), so every Chog gets every animation for free.
+- **Trait-driven parts:** Skin trait -> spike colour; Body trait -> outfit style + colour (keyword map to a few styles: suit, shirt, hoodie, robe, bare); Head trait -> hat shape (keyword map: cap, bucket, wizard, horns, headband, crown, none) with colour sampled from the NFT; Base Skull/Radioactive -> alternate head shell palette.
+- **Real NFT face:** crop the face region of the NFT image (inside the frame edges, so never sliced), quantize to a small palette, scale to the head's face window and paste it on the head. Eyes, blush, lasers and expression are the owner's real art. Side=Left mirrors. Back-facing frames show head shell + hat only.
+- **Atlas format (Petdex/Codex compatible):** 8 columns x 9 rows of 192x208 frames (1536x1872 PNG). Rows used by Sato: 0 idle (6 frames), 1 walk east (8), 2 walk west (8), 3 react (4), 4 hop (5), 8 celebrate (6). Rows 5-7 are ours: 5 sleep, 6 talk, 7 sad. Exact Petdex metadata format to be verified against petdex.dev before publishing.
+- **Where it runs:** pure pixel logic (palette sampling, quantize, kit drawing, compositing) in `@chog/core` on raw RGBA buffers, unit-tested; image decode/encode via the Electron renderer canvas. The atlas is generated once per Chog and cached in userData.
+- **Doze/sleep (borrowed from Sato):** when the owner is idle 2+ minutes the Pet stops walking and plays sleep; after 15 minutes idle, animation and polling pause until input returns.
+- **Bonus:** "Export for Codex/Petdex" saves the atlas so the same Chog runs in other pet apps.
+- 3D is dropped for the hackathon.
 
 ## Mechanics (v1 defaults, tune during build)
 - **Archetypes:** 5 archetypes derived from traits (e.g. Hype, Grump, Lazy Sage, Chaos, Sweetheart). Mapping lives in a JSON table `traits -> archetype + base axes` (e.g. `Eyes=Sleepy -> NightOwl +20`). Gemini later adds flavor text per token, cached once per token.

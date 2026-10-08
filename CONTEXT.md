@@ -62,7 +62,7 @@ What the Owner is doing on their computer, reduced to Categories and durations. 
 _Avoid_: tracking, telemetry, usage
 
 **Category**:
-A coarse bucket of Activity: coding, design, chat, browsing, video, meeting, idle.
+A coarse bucket of Activity: coding, design, chat, browsing, video, meeting, idle, or other.
 _Avoid_: tag, type
 
 **Reaction**:
