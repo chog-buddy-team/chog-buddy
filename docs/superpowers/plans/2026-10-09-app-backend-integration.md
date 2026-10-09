@@ -42,7 +42,7 @@ Also `docs/adr/0001` (privacy), `CONTEXT.md`, and the chat design in `docs/super
   - Delete `diary.json` and clear the session's active token.
   - Tell the owner in a dialog.
   - Return to the sign-in/Judge choice.
-- **Backend base URL:** `settings.apiUrl`. Default `https://chog-buddy.vercel.app`, overridable by the `CHOG_API_URL` env var.
+- **Backend base URL:** `settings.apiUrl`. Default `https://chog-buddy-api.vercel.app`, overridable by the `CHOG_API_URL` env var.
 - **Loopback sign-in:**
   - Binds `127.0.0.1` on a random port.
   - Uses a random 32-hex `state`.
@@ -512,7 +512,7 @@ Append to `app/test/store.test.ts`:
   it('fills integration defaults', () => {
     const dir = mkdtempSync(join(tmpdir(), 'chog-'));
     const s = loadSettings(dir);
-    expect(s).toMatchObject({ apiUrl: 'https://chog-buddy.vercel.app', judgeMode: false, session: null, lastUpload: 0, lastOwnershipCheck: 0, yesterday: null });
+    expect(s).toMatchObject({ apiUrl: 'https://chog-buddy-api.vercel.app', judgeMode: false, session: null, lastUpload: 0, lastOwnershipCheck: 0, yesterday: null });
     expect(s.secrets).toEqual({ githubEnc: null, icalEnc: null });
   });
   it('keeps saved secrets and fills missing secret fields', () => {
@@ -550,7 +550,7 @@ export function unseal(c: Cipher, sealed: string | null): string | null {
 
 In `app/src/main/store.ts`, extend the `Settings` type with the fields listed under Interfaces, and the defaults with:
 ```ts
-apiUrl: 'https://chog-buddy.vercel.app', judgeMode: false, session: null,
+apiUrl: 'https://chog-buddy-api.vercel.app', judgeMode: false, session: null,
 secrets: { githubEnc: null, icalEnc: null }, lastUpload: 0, lastOwnershipCheck: 0, yesterday: null,
 ```
 In the merge, add `secrets: { ...defaults.secrets, ...(saved?.secrets ?? {}) }` next to `chat`.

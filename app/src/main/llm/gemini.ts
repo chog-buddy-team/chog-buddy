@@ -3,7 +3,7 @@ import { ProviderError, type ChatMessage, type ChatProvider } from './types';
 
 export function createGemini(opts: { apiKey: string | null; model?: string; fetchImpl?: typeof fetch }): ChatProvider {
   const f = opts.fetchImpl ?? fetch;
-  const model = opts.model ?? 'gemini-2.5-flash';
+  const model = opts.model ?? 'gemini-flash-lite-latest';
   return {
     id: 'gemini',
     async available() {

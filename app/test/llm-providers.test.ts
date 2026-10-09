@@ -76,7 +76,7 @@ describe('gemini', () => {
     expect(out).toBe('Yo chief');
     expect(toks).toEqual(['Yo ', 'chief']);
     const [url, init] = f.mock.calls[0];
-    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse');
+    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:streamGenerateContent?alt=sse');
     expect(String(url)).not.toContain('SECRET_KEY_123');
     expect(init.headers['x-goog-api-key']).toBe('SECRET_KEY_123');
     const sent = JSON.parse(init.body);
