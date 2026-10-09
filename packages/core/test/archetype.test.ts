@@ -41,3 +41,9 @@ describe('pickArchetype', () => {
       for (const v of Object.values(base)) expect(v).toBeGreaterThanOrEqual(0), expect(v).toBeLessThanOrEqual(100);
   });
 });
+
+describe('ARCHETYPES voice', () => {
+  it('every archetype has a non-empty voice description', () => {
+    for (const a of Object.values(ARCHETYPES)) expect(a.voice.length).toBeGreaterThan(10);
+  });
+});
