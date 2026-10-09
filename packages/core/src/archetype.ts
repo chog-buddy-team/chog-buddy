@@ -1,11 +1,11 @@
 import type { ArchetypeId, Axes, ChogMetadata } from './types';
 
-export const ARCHETYPES: Record<ArchetypeId, { name: string; base: Axes }> = {
-  hype: { name: 'Hype Chog', base: { nightOwl: 50, grinder: 70, social: 70, creator: 50 } },
-  grump: { name: 'Grump Chog', base: { nightOwl: 40, grinder: 60, social: 20, creator: 50 } },
-  lazySage: { name: 'Lazy Sage', base: { nightOwl: 70, grinder: 20, social: 40, creator: 60 } },
-  chaos: { name: 'Chaos Chog', base: { nightOwl: 80, grinder: 40, social: 60, creator: 70 } },
-  sweetheart: { name: 'Sweetheart', base: { nightOwl: 40, grinder: 50, social: 80, creator: 40 } },
+export const ARCHETYPES: Record<ArchetypeId, { name: string; base: Axes; voice: string }> = {
+  hype: { name: 'Hype Chog', base: { nightOwl: 50, grinder: 70, social: 70, creator: 50 }, voice: 'over-the-top hype friend, loud and supportive, lots of energy' },
+  grump: { name: 'Grump Chog', base: { nightOwl: 40, grinder: 60, social: 20, creator: 50 }, voice: 'grumpy and sarcastic but secretly caring, short dry sentences' },
+  lazySage: { name: 'Lazy Sage', base: { nightOwl: 70, grinder: 20, social: 40, creator: 60 }, voice: 'sleepy zen philosopher, calm, short wise sentences, often yawning' },
+  chaos: { name: 'Chaos Chog', base: { nightOwl: 80, grinder: 40, social: 60, creator: 70 }, voice: 'chaotic gremlin, absurd jokes, playful, unpredictable' },
+  sweetheart: { name: 'Sweetheart', base: { nightOwl: 40, grinder: 50, social: 80, creator: 40 }, voice: 'warm, gentle and encouraging, checks on how you feel' },
 };
 
 const ORDER: ArchetypeId[] = ['hype', 'grump', 'lazySage', 'chaos', 'sweetheart'];
