@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerMonitor, screen, Tray } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, safeStorage, screen, Tray } from 'electron';
 import path from 'node:path';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { ARCHETYPES, categorize, fetchChogMetadata, ipfsToHttp, pickArchetype, type ArchetypeId, type ChogMetadata } from '@chog/core';
@@ -7,6 +7,10 @@ import { loadSettings, saveSettings, type Settings } from './store';
 import { detectTrigger, initialState, pickLine, type ReactionState, type Trigger } from './reactions';
 import { addSample, dayKey, emptyTotals } from './tally';
 import { chooseAnimation, PAUSE_SEC, REACT_MS, TALK_MS } from './animState';
+import { createGemini } from './llm/gemini';
+import { createOllama } from './llm/ollama';
+import { buildSystemPrompt } from './llm/prompt';
+import { ChatSession } from './llm/session';
 import { petdexFolderName, petdexManifest } from './petdex';
 
 const W = 192;
@@ -34,6 +38,47 @@ let rebuildMenu: (() => void) | null = null;
 let reactUntil = 0;
 let talkUntil = 0;
 let lastAnimKey = '';
+const CHAT_H = 420;
+let chatOpen = false;
+let inFlightChat = false;
+let chat: ChatSession | null = null;
+let ollamaModels: string[] = [];
+
+function geminiKey(): string | null {
+  const enc = settings.chat.geminiKeyEnc;
+  if (!enc || !safeStorage.isEncryptionAvailable()) return null;
+  try {
+    return safeStorage.decryptString(Buffer.from(enc, 'base64'));
+  } catch {
+    return null;
+  }
+}
+
+function openChat(mode: 'chat' | 'key') {
+  if (!win) return;
+  const b = win.getBounds();
+  if (!chatOpen) win.setBounds({ x: b.x, y: b.y + b.height - CHAT_H, width: W, height: CHAT_H });
+  chatOpen = true;
+  win.setFocusable(true);
+  if (process.platform === 'darwin') app.focus({ steal: true });
+  win.focus();
+  win.webContents.send('chat-open', { mode });
+}
+
+function closeChat() {
+  if (!win || !chatOpen) return;
+  const b = win.getBounds();
+  win.setBounds({ x: b.x, y: b.y + b.height - H, width: W, height: H });
+  chatOpen = false;
+  win.setFocusable(false);
+  win.blur();
+  win.webContents.send('chat-closed');
+}
+
+async function refreshOllamaModels() {
+  ollamaModels = await createOllama({ model: settings.chat.ollamaModel }).listModels().catch(() => []);
+  rebuildMenu?.();
+}
 
 function say(trigger: Trigger) {
   win?.webContents.send('say', pickLine(archetype, trigger, lastCategory));
@@ -103,6 +148,13 @@ async function start() {
   }
   archetype = pickArchetype(meta);
   reactions = initialState(Date.now());
+  chat = new ChatSession(
+    () => [createOllama({ model: settings.chat.ollamaModel }), createGemini({ apiKey: geminiKey() })],
+    () => settings.chat.provider,
+    () => buildSystemPrompt({ chogName: meta.name, archetype, totals: settings.today.totals }),
+  );
+  globalShortcut.register('Control+Shift+Space', () => (chatOpen ? closeChat() : openChat('chat')));
+  app.on('will-quit', () => globalShortcut.unregisterAll());
 
   const area = screen.getPrimaryDisplay().workArea;
   walk = { x: area.x + area.width / 2, dir: 1, pauseUntil: 0 };
@@ -143,6 +195,7 @@ async function start() {
       lastAnimKey = key;
       win.webContents.send('anim', { anim: choice.anim, paused: choice.paused });
     }
+    if (chatOpen) return;
     if (dragging || !choice.canWalk) return;
     if (perch && now > perch.until) perch = null;
     const [, curY] = win.getPosition();
@@ -210,6 +263,37 @@ async function start() {
             saveSettings(app.getPath('userData'), settings);
           },
         },
+        {
+          label: 'Chat AI',
+          submenu: [
+            ...(['auto', 'ollama', 'gemini'] as const).map((p) => ({
+              label: p === 'auto' ? 'Auto (Ollama, then Gemini)' : p === 'ollama' ? 'Ollama (local, private)' : 'Gemini (free tier)',
+              type: 'radio' as const,
+              checked: settings.chat.provider === p,
+              click: () => { settings.chat.provider = p; saveSettings(app.getPath('userData'), settings); refreshOllamaModels(); },
+            })),
+            { type: 'separator' as const },
+            {
+              label: ollamaModels.length ? 'Ollama model' : 'Ollama not running',
+              enabled: ollamaModels.length > 0,
+              submenu: ollamaModels.length
+                ? ollamaModels.map((m) => ({
+                    label: m,
+                    type: 'radio' as const,
+                    checked: m === settings.chat.ollamaModel || m.startsWith(`${settings.chat.ollamaModel}:`),
+                    click: () => { settings.chat.ollamaModel = m; saveSettings(app.getPath('userData'), settings); },
+                  }))
+                : [{ label: 'brew install ollama && ollama pull llama3.2', enabled: false }],
+            },
+            { label: settings.chat.geminiKeyEnc ? 'Replace Gemini key…' : 'Set Gemini key…', click: () => openChat('key') },
+            {
+              label: 'Clear Gemini key',
+              enabled: !!settings.chat.geminiKeyEnc,
+              click: () => { settings.chat.geminiKeyEnc = null; saveSettings(app.getPath('userData'), settings); rebuildMenu?.(); },
+            },
+            { label: 'Gemini free tier may use chats to improve Google products', enabled: false },
+          ],
+        },
         { label: 'Poke your Chog', click: () => poke() },
         {
           label: 'Export for Codex/Petdex…',
@@ -236,6 +320,7 @@ async function start() {
     );
   tray.setToolTip('Chog Buddy');
   rebuildMenu();
+  refreshOllamaModels();
 }
 
 ipcMain.on('drag-start', () => {
@@ -254,11 +339,44 @@ ipcMain.on('drag-end', () => {
   const [x, y] = win.getPosition();
   const a = workAreaFor(x, y);
   walk = { ...walk, x: clampX(x, a.x, a.x + a.width - W) };
-  win.setPosition(Math.round(walk.x), groundY(a)); // drop to the ground
+  win.setPosition(Math.round(walk.x), a.y + a.height - win.getBounds().height); // drop to the ground
   dragging = false;
 });
 
-ipcMain.on('pet-click', () => poke());
+ipcMain.on('pet-click', () => {
+  reactUntil = Date.now() + REACT_MS;
+  openChat('chat');
+});
+ipcMain.on('chat-send', async (_e, text: unknown) => {
+  if (!chat || typeof text !== 'string' || inFlightChat) return;
+  inFlightChat = true;
+  try {
+    talkUntil = Date.now() + 60_000;
+    const r = await chat.send(text, (t) => {
+      talkUntil = Date.now() + TALK_MS;
+      win?.webContents.send('chat-token', t);
+    });
+    if (r.failed) win?.webContents.send('chat-replace', r.reply);
+    talkUntil = Date.now() + TALK_MS;
+    win?.webContents.send('chat-done', { failed: r.failed });
+  } finally {
+    inFlightChat = false;
+  }
+});
+ipcMain.on('chat-close', () => closeChat());
+ipcMain.on('key-submit', (_e, key: unknown) => {
+  if (typeof key !== 'string') return;
+  const k = key.trim();
+  closeChat();
+  if (!k || k.length > 200) return;
+  if (!safeStorage.isEncryptionAvailable()) {
+    dialog.showErrorBox('Chog Buddy', 'Secure storage is not available on this system, so the key was not saved.');
+    return;
+  }
+  settings.chat.geminiKeyEnc = safeStorage.encryptString(k).toString('base64');
+  saveSettings(app.getPath('userData'), settings);
+  rebuildMenu?.();
+});
 ipcMain.on('atlas-ready', (_e, png: Uint8Array) => {
   if (!(png instanceof Uint8Array) || png.byteLength > 20_000_000) return;
   atlasPng = Buffer.from(png);

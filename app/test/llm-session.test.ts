@@ -82,3 +82,11 @@ describe('ChatSession', () => {
     expect(s.history).toHaveLength(0);
   });
 });
+
+describe('ChatSession.send', () => {
+  it('never rejects when available() throws', async () => {
+    const bad = { ...fake('ollama', true), available: async () => { throw new Error('boom'); } };
+    const r = await new ChatSession(() => [bad], () => 'auto', () => 's').send('hi', () => {});
+    expect(r.failed).toBe(true);
+  });
+});

@@ -13,6 +13,14 @@ const api = {
   dragStart: () => ipcRenderer.send('drag-start'),
   dragMove: (x: number, y: number) => ipcRenderer.send('drag-move', { x, y }),
   dragEnd: () => ipcRenderer.send('drag-end'),
+  onChatOpen: (cb: (p: { mode: 'chat' | 'key' }) => void) => { ipcRenderer.on('chat-open', (_e, p) => cb(p)); },
+  onChatToken: (cb: (t: string) => void) => { ipcRenderer.on('chat-token', (_e, t) => cb(t)); },
+  onChatReplace: (cb: (t: string) => void) => { ipcRenderer.on('chat-replace', (_e, t) => cb(t)); },
+  onChatDone: (cb: () => void) => { ipcRenderer.on('chat-done', () => cb()); },
+  onChatClosed: (cb: () => void) => { ipcRenderer.on('chat-closed', () => cb()); },
+  chatSend: (text: string) => ipcRenderer.send('chat-send', text),
+  keySubmit: (key: string) => ipcRenderer.send('key-submit', key),
+  chatClose: () => ipcRenderer.send('chat-close'),
   petClick: () => ipcRenderer.send('pet-click'),
 };
 

@@ -88,6 +88,54 @@ window.chog.onSay((text) => {
   hideTimer = window.setTimeout(() => bubble.classList.remove('show'), 6000);
 });
 
+const chatForm = document.getElementById('chat') as HTMLFormElement;
+const chatInput = document.getElementById('chat-input') as HTMLInputElement;
+let chatMode: 'chat' | 'key' = 'chat';
+
+window.chog.onChatOpen(({ mode }) => {
+  chatMode = mode;
+  document.body.classList.add('chatting');
+  chatForm.hidden = false;
+  chatInput.type = mode === 'key' ? 'password' : 'text';
+  chatInput.placeholder = mode === 'key' ? 'Paste your Gemini API key, then Enter' : 'Talk to your Chog… (Esc to close)';
+  chatInput.value = '';
+  chatInput.focus();
+});
+window.chog.onChatClosed(() => {
+  document.body.classList.remove('chatting');
+  chatForm.hidden = true;
+});
+chatForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const v = chatInput.value;
+  chatInput.value = '';
+  if (chatMode === 'key') {
+    window.chog.keySubmit(v);
+    return;
+  }
+  if (!v.trim()) return;
+  bubble.textContent = '';
+  bubble.classList.add('show');
+  clearTimeout(hideTimer);
+  window.chog.chatSend(v);
+});
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') window.chog.chatClose();
+});
+window.chog.onChatToken((t) => {
+  bubble.textContent += t;
+  bubble.classList.add('show');
+  bubble.scrollTop = bubble.scrollHeight;
+});
+window.chog.onChatReplace((t) => {
+  bubble.textContent = t;
+  bubble.classList.add('show');
+});
+window.chog.onChatDone(() => {
+  clearTimeout(hideTimer);
+  hideTimer = window.setTimeout(() => bubble.classList.remove('show'), 12_000);
+});
+
 // Drag vs click: movement over 4px means drag.
 let down: { x: number; y: number } | null = null;
 let dragging = false;

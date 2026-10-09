@@ -35,16 +35,17 @@ export class ChatSession {
   async send(text: string, onToken: (t: string) => void): Promise<{ reply: string; provider: ChatProvider['id'] | null; failed: boolean }> {
     const content = text.trim().slice(0, MAX_INPUT);
     if (!content) return { reply: '', provider: null, failed: false };
-    const provider = await pickProvider(this.getPref(), this.getProviders());
-    if (!provider) return { reply: errorLine('none'), provider: null, failed: true };
     const turn: ChatMessage[] = [...this.history, { role: 'user', content }];
+    let provider: ChatProvider | null = null;
     try {
+      provider = await pickProvider(this.getPref(), this.getProviders());
+      if (!provider) return { reply: errorLine('none'), provider: null, failed: true };
       const reply = await provider.stream(this.getSystem(), turn, onToken);
       this.history = [...turn, { role: 'assistant' as const, content: reply }].slice(-HISTORY_CAP);
       return { reply, provider: provider.id, failed: false };
     } catch (e) {
       const kind = e instanceof ProviderError ? e.kind : 'bad-response';
-      return { reply: errorLine(kind), provider: provider.id, failed: true };
+      return { reply: errorLine(kind), provider: provider?.id ?? null, failed: true };
     }
   }
 }
