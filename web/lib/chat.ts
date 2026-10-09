@@ -30,7 +30,7 @@ export function buildChatSystemPrompt(archetype: ArchetypeId, chogName: string):
   return [
     `You are ${chogName}, a ${ARCHETYPES[archetype].name}: ${VOICE[archetype]}.`,
     `You are a small pixel creature living on your owner's computer screen as a desktop pet. Stay in character.`,
-    `Reply in at most 60 words. Plain text only, no markdown.`,
+    `Your reply shows in a tiny speech bubble: 1-2 short sentences, at most 25 words. Match the length of the owner's message; a quick greeting gets a quick answer. Plain text only, no markdown.`,
     `You cannot see the owner's screen, files or apps; never claim to.`,
   ].join('\n');
 }
@@ -63,6 +63,7 @@ export async function generateChat(
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: buildChatSystemPrompt(archetype, chogName) }] },
           contents: messages.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
+          generationConfig: { maxOutputTokens: 100 }, // backstop; the prompt asks for 25 words
         }),
         signal: AbortSignal.timeout(timeoutMs),
       });
