@@ -42,3 +42,11 @@ create table if not exists diary_usage (
 
 create index if not exists nonces_created_at on nonces (created_at);
 create index if not exists sessions_created_at on sessions (created_at);
+
+-- Chat messages per caller per day ("wallet:<addr>", "ip:<hmac>", or "global"). Counts only, never chat text.
+create table if not exists chat_usage (
+  key text not null,
+  day date not null,
+  count int not null,
+  primary key (key, day)
+);
