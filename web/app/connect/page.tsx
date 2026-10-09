@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createWalletClient, custom, getAddress } from 'viem';
 import { createSiweMessage } from 'viem/siwe';
 
@@ -10,9 +10,13 @@ declare global {
 
 export default function Connect() {
   const [status, setStatus] = useState('Connect the wallet that holds your Chog.');
-  const params = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search);
-  const port = params?.get('port') ?? '';
-  const state = params?.get('state') ?? '';
+  const [p, setP] = useState<{ port: string; state: string } | null>(null);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    setP({ port: q.get('port') ?? '', state: q.get('state') ?? '' });
+  }, []);
+  const port = p?.port ?? '';
+  const state = p?.state ?? '';
   const valid = /^\d{2,5}$/.test(port) && /^[0-9a-f]{32}$/.test(state);
 
   async function signIn() {
@@ -44,7 +48,7 @@ export default function Connect() {
   return (
     <main style={{ maxWidth: 420, margin: '80px auto', fontFamily: 'system-ui', textAlign: 'center' }}>
       <h1>Chog Buddy</h1>
-      <p>{valid ? status : 'Open this page from the Chog Buddy app.'}</p>
+      <p>{!p ? 'Loading…' : valid ? status : 'Open this page from the Chog Buddy app.'}</p>
       {valid && <button onClick={signIn} style={{ padding: '10px 20px', fontSize: 16 }}>Connect wallet</button>}
     </main>
   );
