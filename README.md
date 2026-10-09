@@ -44,6 +44,7 @@ contracts/  ChogSoul (and later FocusPool) for Monad
 
 ## Open questions (ask in Chog Discord)
 
-- Is testnet OK for judging?
+- ~~Is testnet OK for judging?~~ Decided: testnet (site sets no chain rule).
+- Does a testnet mock $CHOG count for the $CHOG bonus?
 - Are trait art layers available?
 - What is the official $CHOG address?
