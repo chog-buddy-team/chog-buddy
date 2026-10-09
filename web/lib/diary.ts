@@ -48,15 +48,18 @@ export async function generateDiary(
   chogName: string,
   t: DailyTotals,
   fetchImpl: typeof fetch = fetch,
+  timeoutMs = 10_000, // overloaded models can hang 15s+; fall back to the template instead
 ): Promise<{ text: string; source: 'gemini' | 'template' }> {
   const key = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+  // A "-latest" alias never gets retired the way pinned versions do (gemini-2.5-flash is closed to new keys).
+  const model = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
   if (key) {
     try {
       const res = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
         body: JSON.stringify({ contents: [{ parts: [{ text: buildDiaryPrompt(archetype, chogName, t) }] }] }),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       if (res.ok) {
         const json = await res.json();

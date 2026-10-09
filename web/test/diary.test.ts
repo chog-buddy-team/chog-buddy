@@ -45,6 +45,15 @@ describe('generateDiary', () => {
     const r = await generateDiary('hype', 'CHOG #5', t, fetchImpl);
     expect(r.source).toBe('template');
   });
+  it('falls back to template when Gemini hangs past the timeout', async () => {
+    // Resolves only when aborted, like an overloaded model that never answers.
+    const fetchImpl = vi.fn(
+      (_url: unknown, init?: RequestInit) =>
+        new Promise<Response>((_res, rej) => init?.signal?.addEventListener('abort', () => rej(new Error('aborted')))),
+    ) as unknown as typeof fetch;
+    const r = await generateDiary('hype', 'CHOG #5', t, fetchImpl, 50);
+    expect(r.source).toBe('template');
+  });
   it('falls back to template on network failure', async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error('offline'));
     expect((await generateDiary('hype', 'CHOG #5', t, fetchImpl)).source).toBe('template');
