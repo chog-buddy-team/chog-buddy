@@ -92,6 +92,31 @@ describe('gemini', () => {
     const g = createGemini({ apiKey: 'SECRET_KEY_123', fetchImpl: f });
     await expect(g.stream('s', [{ role: 'user', content: 'x' }], () => {})).rejects.toMatchObject({ kind: 'bad-response' });
   });
+  it('throws on in-stream 429 error code', async () => {
+    const f = vi.fn().mockResolvedValue(ok(body('data: {"candidates":[{"content":{"parts":[{"text":"text"}]}}]}\n\ndata: {"error":{"code":429}}\n\n')));
+    const g = createGemini({ apiKey: 'SECRET_KEY_123', fetchImpl: f });
+    await expect(g.stream('s', [{ role: 'user', content: 'x' }], () => {})).rejects.toMatchObject({ kind: 'quota' });
+  });
+  it('throws on in-stream UNAUTHENTICATED error status', async () => {
+    const f = vi.fn().mockResolvedValue(ok(body('data: {"candidates":[{"content":{"parts":[{"text":"text"}]}}]}\n\ndata: {"error":{"status":"UNAUTHENTICATED"}}\n\n')));
+    const g = createGemini({ apiKey: 'SECRET_KEY_123', fetchImpl: f });
+    await expect(g.stream('s', [{ role: 'user', content: 'x' }], () => {})).rejects.toMatchObject({ kind: 'auth' });
+  });
+  it('rejects on error after partial text (not truncated success)', async () => {
+    const f = vi.fn().mockResolvedValue(ok(body('data: {"candidates":[{"content":{"parts":[{"text":"Hel"}]}}]}\n\ndata: {"error":{"code":500}}\n\n')));
+    const g = createGemini({ apiKey: 'SECRET_KEY_123', fetchImpl: f });
+    await expect(g.stream('s', [{ role: 'user', content: 'x' }], () => {})).rejects.toMatchObject({ kind: 'bad-response' });
+  });
+  it('gemini throws on empty reply', async () => {
+    const f = vi.fn().mockResolvedValue(ok(body('data: {"candidates":[]}\n\n')));
+    const g = createGemini({ apiKey: 'SECRET_KEY_123', fetchImpl: f });
+    await expect(g.stream('s', [{ role: 'user', content: 'x' }], () => {})).rejects.toMatchObject({ kind: 'bad-response' });
+  });
+  it('gemini throws on body stream error', async () => {
+    const f = vi.fn().mockResolvedValue(new Response(new ReadableStream<Uint8Array>({ start(c){ c.enqueue(enc.encode('data: {"candidates":[{"content":{"parts":[{"text":"a"}]}}]}\n\n')); c.error(new Error('reset')); } }), { status: 200 }));
+    const g = createGemini({ apiKey: 'SECRET_KEY_123', fetchImpl: f });
+    await expect(g.stream('s', [{ role: 'user', content: 'x' }], () => {})).rejects.toMatchObject({ kind: 'network' });
+  });
   it('ProviderError is an Error', () => {
     expect(new ProviderError('x', 'quota')).toBeInstanceOf(Error);
   });

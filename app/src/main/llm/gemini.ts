@@ -32,7 +32,7 @@ export function createGemini(opts: { apiKey: string | null; model?: string; fetc
       try {
         await readLines(res.body, (line) => {
           if (!line.startsWith('data:')) return;
-          let json: { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>; promptFeedback?: { blockReason?: string } };
+          let json: { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>; promptFeedback?: { blockReason?: string }; error?: { code?: number; status?: string; message?: string } };
           try {
             json = JSON.parse(line.slice(5).trim());
           } catch {
@@ -40,6 +40,16 @@ export function createGemini(opts: { apiKey: string | null; model?: string; fetc
             return;
           }
           if (json.promptFeedback?.blockReason) throw new ProviderError(`gemini blocked: ${json.promptFeedback.blockReason}`, 'bad-response');
+          if (json.error) {
+            const err = json.error;
+            let kind: 'auth' | 'quota' | 'bad-response' = 'bad-response';
+            if (err.code === 429 || err.status === 'RESOURCE_EXHAUSTED') {
+              kind = 'quota';
+            } else if (err.code === 401 || err.code === 403 || err.status === 'UNAUTHENTICATED' || err.status === 'PERMISSION_DENIED') {
+              kind = 'auth';
+            }
+            throw new ProviderError(`gemini error: ${err.status || err.code || 'unknown'}`, kind);
+          }
           for (const p of json.candidates?.[0]?.content?.parts ?? []) {
             if (p.text) {
               out += p.text;
