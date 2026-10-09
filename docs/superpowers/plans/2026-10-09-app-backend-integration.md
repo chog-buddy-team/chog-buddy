@@ -92,6 +92,7 @@ app/src/main/store.ts          + session, judgeMode, apiUrl, secrets, lastUpload
 app/src/main/reactions.ts / lines.ts   + 'github' and 'meeting_soon' Triggers
 app/src/main/main.ts           wiring
 web/app/connect/page.tsx       wallet sign-in page (needs web/ from the backend plan)
+app/src/main/chatlog.ts        encrypted chat history (Task 11)
 app/test/*.test.ts
 ```
 
@@ -1398,6 +1399,161 @@ Record all of this in the report. Kill only the processes you started, then rest
 ```bash
 git add app/src
 git commit -m "feat(app): sign-in, Chog picker, Judge Mode, uploads, Diary, Triggers and flavour lines"
+```
+
+---
+
+### Task 11: Saved chat history (encrypted) and history window
+
+**Files:**
+- Create: `app/src/main/chatlog.ts`, `app/src/renderer/history.html`, `app/src/renderer/history.ts`
+- Modify: `app/src/main/main.ts`, `app/src/preload.ts`, `app/build.mjs`
+- Test: `app/test/chatlog.test.ts`
+
+**Interfaces:**
+- Consumes: `Cipher`, `seal`, `unseal` (Task 4), `ChatSession` and `ChatMessage` (chat-box plan).
+- Produces:
+  - `type LoggedMessage = ChatMessage & { at: number; tokenId: number }`
+  - `CHATLOG_CAP = 200`
+  - `loadChatLog(dir: string, c: Cipher): LoggedMessage[]`. Returns `[]` if the file is missing, cannot be decrypted, or is not an array.
+  - `appendChatLog(dir: string, c: Cipher, msgs: LoggedMessage[]): void`. Keeps only the last `CHATLOG_CAP` entries. If the cipher is unavailable, it writes nothing.
+  - `wipeChatLog(dir: string): void`
+  - `forToken(log: LoggedMessage[], tokenId: number): LoggedMessage[]`
+
+The log is stored as one sealed string in `userData/chat-history.bin`. It is never written in plain text.
+
+- [ ] **Step 1: Write the failing test**
+
+`app/test/chatlog.test.ts`:
+```ts
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { CHATLOG_CAP, appendChatLog, forToken, loadChatLog, wipeChatLog } from '../src/main/chatlog';
+import type { Cipher } from '../src/main/secrets';
+
+const rev: Cipher = { available: () => true, encrypt: (s) => Buffer.from([...s].reverse().join('')), decrypt: (b) => [...b.toString()].reverse().join('') };
+const m = (i: number, tokenId = 5) => ({ role: 'user' as const, content: `msg ${i}`, at: i, tokenId });
+
+describe('chat log', () => {
+  it('round-trips encrypted and is not plain text on disk', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    appendChatLog(dir, rev, [m(1), { role: 'assistant', content: 'hi there', at: 2, tokenId: 5 }]);
+    expect(loadChatLog(dir, rev).map((x) => x.content)).toEqual(['msg 1', 'hi there']);
+    expect(readFileSync(join(dir, 'chat-history.bin'), 'utf8')).not.toContain('hi there');
+  });
+  it('caps at CHATLOG_CAP keeping the newest', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    appendChatLog(dir, rev, Array.from({ length: CHATLOG_CAP + 15 }, (_, i) => m(i)));
+    const log = loadChatLog(dir, rev);
+    expect(log).toHaveLength(CHATLOG_CAP);
+    expect(log[0].at).toBe(15);
+  });
+  it('returns [] for missing, corrupt or undecryptable files', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    expect(loadChatLog(dir, rev)).toEqual([]);
+    writeFileSync(join(dir, 'chat-history.bin'), 'garbage');
+    expect(loadChatLog(dir, { ...rev, decrypt: () => { throw new Error('x'); } })).toEqual([]);
+    expect(loadChatLog(dir, rev)).toEqual([]);
+  });
+  it('writes nothing when encryption is unavailable', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    appendChatLog(dir, { ...rev, available: () => false }, [m(1)]);
+    expect(existsSync(join(dir, 'chat-history.bin'))).toBe(false);
+  });
+  it('filters by token and wipes', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    appendChatLog(dir, rev, [m(1, 5), m(2, 9)]);
+    expect(forToken(loadChatLog(dir, rev), 9).map((x) => x.at)).toEqual([2]);
+    wipeChatLog(dir);
+    expect(loadChatLog(dir, rev)).toEqual([]);
+  });
+});
+```
+
+- [ ] **Step 2: Run the test and confirm it fails**
+
+Run: `npm test -w chog-buddy-app`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement**
+
+`app/src/main/chatlog.ts`:
+```ts
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { ChatMessage } from './llm/types';
+import { seal, unseal, type Cipher } from './secrets';
+
+export type LoggedMessage = ChatMessage & { at: number; tokenId: number };
+export const CHATLOG_CAP = 200;
+const FILE = 'chat-history.bin';
+
+export function loadChatLog(dir: string, c: Cipher): LoggedMessage[] {
+  let sealed: string;
+  try {
+    sealed = readFileSync(join(dir, FILE), 'utf8');
+  } catch {
+    return [];
+  }
+  const plain = unseal(c, sealed);
+  if (!plain) return [];
+  try {
+    const v = JSON.parse(plain);
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+export function appendChatLog(dir: string, c: Cipher, msgs: LoggedMessage[]): void {
+  if (!c.available()) return;
+  const next = [...loadChatLog(dir, c), ...msgs].slice(-CHATLOG_CAP);
+  const sealed = seal(c, JSON.stringify(next));
+  if (sealed) writeFileSync(join(dir, FILE), sealed);
+}
+
+export function wipeChatLog(dir: string): void {
+  rmSync(join(dir, FILE), { force: true });
+}
+
+export const forToken = (log: LoggedMessage[], tokenId: number) => log.filter((m) => m.tokenId === tokenId);
+```
+
+- [ ] **Step 4: Wire it up**
+1. **Seed the session.** After the `ChatSession` is created in `start()`, seed it from the log. The session caps itself at 20 messages:
+   ```ts
+   chat.history = forToken(loadChatLog(userData, cipher), tokenId).slice(-20).map(({ role, content }) => ({ role, content }));
+   ```
+2. **Append each turn.** In the `chat-send` handler, after a successful reply (`!r.failed && r.reply`), append both messages:
+   ```ts
+   appendChatLog(userData, cipher, [
+     { role: 'user', content: text.trim().slice(0, 500), at: Date.now(), tokenId },
+     { role: 'assistant', content: r.reply, at: Date.now(), tokenId },
+   ]);
+   ```
+3. **Wipe with the Diary.** Everywhere `wipeDiary(userData)` is called (ownership loss, sign-out), also call `wipeChatLog(userData)`.
+4. **Add the tray item "Chat history…".** It opens or focuses a single history window: `new BrowserWindow({ width: 380, height: 520, title: 'Chog chat history', webPreferences: { preload: path.join(__dirname, 'preload.cjs') } })`. Give the window the same `will-navigate` and `setWindowOpenHandler` guards as the Pet window, and load `history.html`. Once it finishes loading, send `history-data` with `forToken(loadChatLog(...), tokenId)` and `meta.name`. Add "Clear chat history" too: it calls `wipeChatLog`, sets `chat.history = []`, and closes the history window if it is open.
+5. **Preload.** Add `onHistory: (cb: (p: { name: string; messages: Array<{ role: string; content: string; at: number }> }) => void) => { ipcRenderer.on('history-data', (_e, p) => cb(p)); }`.
+6. **Window page.** `app/src/renderer/history.html` uses the same CSP as `index.html`, with `script-src 'self'` and no remote content. It loads `history.js`.
+7. **Renderer.** `app/src/renderer/history.ts` renders messages with `textContent` only, never `innerHTML`. Each message is a bubble: the user's on the right, the Chog's on the left. Each bubble shows a local time from `at`. The view scrolls to the bottom. With no messages, show "No chats yet. Click your Chog to talk!"
+8. **Build.** In `app/build.mjs`, add the esbuild entry `src/renderer/history.ts` → `dist/history.js` and copy `history.html`.
+
+- [ ] **Step 5: Verify**
+
+Run: `npm run typecheck -w chog-buddy-app && npm test -w chog-buddy-app && npm run build -w chog-buddy-app`
+Expected: clean.
+
+Then launch the app for 15 s and confirm no crash. Read the code paths and confirm:
+- the log is never written in plain text
+- it is wiped on sign-out and on ownership loss
+- the history window never uses `innerHTML`
+
+- [ ] **Step 6: Commit**
+```bash
+git add app/src/main/chatlog.ts app/src/main/main.ts app/src/preload.ts app/src/renderer/history.* app/build.mjs app/test/chatlog.test.ts
+git commit -m "feat(app): encrypted chat history with a history window"
 ```
 
 ---
