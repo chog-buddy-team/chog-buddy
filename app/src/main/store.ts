@@ -13,7 +13,7 @@ export function loadSettings(dir: string): Settings {
   const defaults: Settings = { tokenId: DEMO_TOKEN_ID, focusMode: false, today: { day: dayKey(new Date()), totals: emptyTotals() }, chat: { ...CHAT_DEFAULTS } };
   try {
     const saved = JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'));
-    return { ...defaults, ...saved, chat: { ...CHAT_DEFAULTS, ...(saved?.chat ?? {}) } };
+    return { ...defaults, ...saved, chat: { ...CHAT_DEFAULTS, ...(saved?.chat && typeof saved.chat === 'object' && !Array.isArray(saved.chat) ? saved.chat : {}) } };
   } catch {
     return defaults;
   }

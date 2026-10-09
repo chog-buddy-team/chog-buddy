@@ -153,7 +153,7 @@ async function start() {
     () => settings.chat.provider,
     () => buildSystemPrompt({ chogName: meta.name, archetype, totals: settings.today.totals }),
   );
-  globalShortcut.register('Control+Shift+Space', () => (chatOpen ? closeChat() : openChat('chat')));
+  if (!globalShortcut.register('Control+Shift+Space', () => (chatOpen ? closeChat() : openChat('chat')))) console.warn('Chog Buddy: hotkey Ctrl+Shift+Space unavailable');
   app.on('will-quit', () => globalShortcut.unregisterAll());
 
   const area = screen.getPrimaryDisplay().workArea;
@@ -234,6 +234,7 @@ async function start() {
     const r = detectTrigger(reactions, { at: now.getTime(), category, hour: now.getHours(), day }, settings.focusMode);
     reactions = r.state;
     if (!r.trigger) return;
+    if (chatOpen || inFlightChat) return; // don't clobber a chat reply
     say(r.trigger);
     // Hop onto the active window's title bar sometimes, if it's big enough and not fullscreen-top.
     const b = w?.bounds;
@@ -368,7 +369,11 @@ ipcMain.on('key-submit', (_e, key: unknown) => {
   if (typeof key !== 'string') return;
   const k = key.trim();
   closeChat();
-  if (!k || k.length > 200) return;
+  if (!k) return;
+  if (k.length > 200) {
+    dialog.showErrorBox('Chog Buddy', 'That key is too long, so it was not saved.');
+    return;
+  }
   if (!safeStorage.isEncryptionAvailable()) {
     dialog.showErrorBox('Chog Buddy', 'Secure storage is not available on this system, so the key was not saved.');
     return;
