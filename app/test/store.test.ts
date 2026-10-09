@@ -21,4 +21,14 @@ describe('settings store', () => {
     writeFileSync(join(dir, 'settings.json'), '{not json');
     expect(loadSettings(dir).tokenId).toBe(5);
   });
+  it('fills chat defaults, including for an old settings file without chat', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ tokenId: 9 }));
+    expect(loadSettings(dir).chat).toEqual({ provider: 'auto', ollamaModel: 'llama3.2', geminiKeyEnc: null });
+  });
+  it('keeps saved chat fields and fills missing ones', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ chat: { provider: 'gemini' } }));
+    expect(loadSettings(dir).chat).toEqual({ provider: 'gemini', ollamaModel: 'llama3.2', geminiKeyEnc: null });
+  });
 });
