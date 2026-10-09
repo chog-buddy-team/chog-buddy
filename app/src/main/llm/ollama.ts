@@ -36,18 +36,28 @@ export function createOllama(opts: { model: string; baseUrl?: string; fetchImpl?
       }
       if (!res.ok || !res.body) throw new ProviderError(`ollama HTTP ${res.status}`, 'bad-response');
       let out = '';
-      await readLines(res.body, (line) => {
-        if (!line.trim()) return;
-        try {
-          const t = (JSON.parse(line) as { message?: { content?: string } }).message?.content;
+      try {
+        await readLines(res.body, (line) => {
+          if (!line.trim()) return;
+          let parsed: { message?: { content?: string }; error?: string };
+          try {
+            parsed = JSON.parse(line);
+          } catch {
+            // ignore a malformed line rather than aborting the reply
+            return;
+          }
+          if (parsed.error) throw new ProviderError(`ollama error: ${parsed.error}`, 'bad-response');
+          const t = parsed.message?.content;
           if (t) {
             out += t;
             onToken(t);
           }
-        } catch {
-          // ignore a malformed line rather than aborting the reply
-        }
-      });
+        });
+      } catch (e) {
+        if (e instanceof ProviderError) throw e;
+        throw new ProviderError(`stream error: ${(e as Error).message}`, 'network');
+      }
+      if (!out) throw new ProviderError('empty reply', 'bad-response');
       return out;
     },
   };

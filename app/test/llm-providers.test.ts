@@ -42,6 +42,21 @@ describe('ollama', () => {
     const o = createOllama({ model: 'x', fetchImpl: vi.fn().mockRejectedValue(new TypeError('fetch failed')) });
     await expect(o.stream('s', [], () => {})).rejects.toMatchObject({ kind: 'network' });
   });
+  it('throws on mid-stream error object', async () => {
+    const f = vi.fn().mockResolvedValue(ok(body('{"message":{"content":"start"}}\n{"error":"model not found"}\n')));
+    const o = createOllama({ model: 'x', fetchImpl: f });
+    await expect(o.stream('s', [], () => {})).rejects.toMatchObject({ kind: 'bad-response', message: /error/ });
+  });
+  it('throws on empty reply', async () => {
+    const f = vi.fn().mockResolvedValue(ok(body('{"done":true}\n')));
+    const o = createOllama({ model: 'x', fetchImpl: f });
+    await expect(o.stream('s', [], () => {})).rejects.toMatchObject({ kind: 'bad-response', message: /empty/ });
+  });
+  it('throws on body stream error', async () => {
+    const f = vi.fn().mockResolvedValue(new Response(new ReadableStream<Uint8Array>({ start(c){ c.enqueue(enc.encode('{"message":{"content":"a"}}\n')); c.error(new Error('reset')); } }), { status: 200 }));
+    const o = createOllama({ model: 'x', fetchImpl: f });
+    await expect(o.stream('s', [], () => {})).rejects.toMatchObject({ kind: 'network' });
+  });
 });
 
 describe('gemini', () => {
@@ -57,20 +72,25 @@ describe('gemini', () => {
       'data: {"candidates":[{"content":{"parts":[{"text":"chief"}]}}]}\n\n',
     )));
     const toks: string[] = [];
-    const out = await createGemini({ apiKey: 'K', fetchImpl: f }).stream('SYS', [{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }, { role: 'user', content: 'c' }], (t) => toks.push(t));
+    const out = await createGemini({ apiKey: 'SECRET_KEY_123', fetchImpl: f }).stream('SYS', [{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }, { role: 'user', content: 'c' }], (t) => toks.push(t));
     expect(out).toBe('Yo chief');
     expect(toks).toEqual(['Yo ', 'chief']);
     const [url, init] = f.mock.calls[0];
     expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse');
-    expect(String(url)).not.toContain('K');
-    expect(init.headers['x-goog-api-key']).toBe('K');
+    expect(String(url)).not.toContain('SECRET_KEY_123');
+    expect(init.headers['x-goog-api-key']).toBe('SECRET_KEY_123');
     const sent = JSON.parse(init.body);
     expect(sent.systemInstruction.parts[0].text).toBe('SYS');
     expect(sent.contents.map((c: { role: string }) => c.role)).toEqual(['user', 'model', 'user']);
   });
   it.each([[400, 'auth'], [401, 'auth'], [403, 'auth'], [429, 'quota'], [500, 'bad-response']])('HTTP %i -> %s', async (status, kind) => {
-    const g = createGemini({ apiKey: 'K', fetchImpl: vi.fn().mockResolvedValue(ok('err', status)) });
+    const g = createGemini({ apiKey: 'SECRET_KEY_123', fetchImpl: vi.fn().mockResolvedValue(ok('err', status)) });
     await expect(g.stream('s', [{ role: 'user', content: 'x' }], () => {})).rejects.toMatchObject({ kind });
+  });
+  it('throws on promptFeedback.blockReason', async () => {
+    const f = vi.fn().mockResolvedValue(ok(body('data: {"candidates":[{"content":{"parts":[{"text":"text"}]}}]}\n\ndata: {"promptFeedback":{"blockReason":"SAFETY"}}\n\n')));
+    const g = createGemini({ apiKey: 'SECRET_KEY_123', fetchImpl: f });
+    await expect(g.stream('s', [{ role: 'user', content: 'x' }], () => {})).rejects.toMatchObject({ kind: 'bad-response' });
   });
   it('ProviderError is an Error', () => {
     expect(new ProviderError('x', 'quota')).toBeInstanceOf(Error);

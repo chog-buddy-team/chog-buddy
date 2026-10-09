@@ -29,20 +29,29 @@ export function createGemini(opts: { apiKey: string | null; model?: string; fetc
       if ([400, 401, 403].includes(res.status)) throw new ProviderError(`gemini auth ${res.status}`, 'auth');
       if (!res.ok || !res.body) throw new ProviderError(`gemini HTTP ${res.status}`, 'bad-response');
       let out = '';
-      await readLines(res.body, (line) => {
-        if (!line.startsWith('data:')) return;
-        try {
-          const json = JSON.parse(line.slice(5).trim()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+      try {
+        await readLines(res.body, (line) => {
+          if (!line.startsWith('data:')) return;
+          let json: { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>; promptFeedback?: { blockReason?: string } };
+          try {
+            json = JSON.parse(line.slice(5).trim());
+          } catch {
+            // partial or non-JSON event: skip
+            return;
+          }
+          if (json.promptFeedback?.blockReason) throw new ProviderError(`gemini blocked: ${json.promptFeedback.blockReason}`, 'bad-response');
           for (const p of json.candidates?.[0]?.content?.parts ?? []) {
             if (p.text) {
               out += p.text;
               onToken(p.text);
             }
           }
-        } catch {
-          // partial or non-JSON event: skip
-        }
-      });
+        });
+      } catch (e) {
+        if (e instanceof ProviderError) throw e;
+        throw new ProviderError(`stream error: ${(e as Error).message}`, 'network');
+      }
+      if (!out) throw new ProviderError('empty reply', 'bad-response');
       return out;
     },
   };
