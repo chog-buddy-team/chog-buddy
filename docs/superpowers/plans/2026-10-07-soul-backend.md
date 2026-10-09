@@ -10,7 +10,7 @@
 
 **Spec:** `docs/designs/chog-buddy.md` (plus `CONTEXT.md`, `docs/adr/`).
 
-**Companion plan:** `docs/superpowers/plans/2026-10-07-pet-app.md` (Track A). **Tasks 3+ here need Track A Tasks 1-2 merged** (`@chog/core` workspace with types, `pickArchetype`, `fetchChogMetadata`, `monad`, `monadTestnet`, `chogAbi`, `CHOG_CONTRACT`). Tasks 1-2 here are independent, so start with them on day 1.
+**Companion plan:** `docs/superpowers/plans/2026-10-07-pet-app.md` (Track A). Tasks 3, 6, 7 and 8 use `@chog/core` (types, `pickArchetype`, `fetchChogMetadata`, `monad`, `monadTestnet`, `chogAbi`, `CHOG_CONTRACT`); it is merged on `main` as of 2026-10-09. Tasks 4-5 don't need it. Build order: 1, 2, 4, 5, 3, 6, 7, 8.
 
 ## Global Constraints
 
@@ -26,9 +26,10 @@
 
 1. **Forged or wild Activity totals** (negative minutes, 5,000 minutes in a day, missing Categories, strings): expect a 400 and nothing stored. Test in Task 3 (`parseDailyTotals`).
 2. **Cron missed or run twice** (Vercel skipped a day; GitHub backup also fires): each day's Activity must apply exactly once and in day order. Test in Task 7 (`computeSoulUpdates`).
-3. **Replay of a SIWE signature** or a message for another domain: expect 401. Nonces are single-use. Test in Task 5 (`verifyLogin`) and enforced by `DELETE ... RETURNING` in the route.
-4. **Uploading Activity for a Chog you don't own** (or one sold since): expect 403. Ownership is checked against mainnet `ownerOf` on every upload. Test in Task 6 (route test with stubbed owner).
-5. **Gemini quota/outage**: the Diary endpoint must still return a template Diary with HTTP 200, not a 500. Test in Task 8.
+3. **Unfinished days** (Owner west of UTC, cron at 00:10 UTC while their day is still running): a day is applied only once it is at least 2 UTC days old, so every timezone has finished it. Checked manually in Task 7 Step 5.
+4. **Replay of a SIWE signature** or a message for another domain: expect 401. Nonces are single-use. Test in Task 5 (`verifyLogin`) and enforced by `DELETE ... RETURNING` in the route.
+5. **Uploading Activity for a Chog you don't own** (or one sold since): expect 403. Ownership is checked against mainnet `ownerOf` on every upload. Test in Task 6 (route test with stubbed owner).
+6. **Gemini quota/outage**: the Diary endpoint must still return a template Diary with HTTP 200, not a 500. Test in Task 8.
 
 ---
 
@@ -79,7 +80,7 @@ web/                               create-next-app output, plus:
   - `function getSoul(uint256 id) external view returns (Soul memory)`
   - `function setWriter(address w) external` (admin only)
   - `event SoulUpdated(uint256 indexed tokenId, Soul soul)`
-  - errors `NotWriter()`, `NotAdmin()`, `LengthMismatch()`, `AxisOutOfRange()`
+  - errors `NotWriter()`, `NotAdmin()`, `LengthMismatch()`, `AxisOutOfRange()`, `ZeroAddress()`
 
 - [ ] **Step 1: Install Foundry and init**
 
@@ -179,6 +180,16 @@ contract ChogSoulTest is Test {
         soul.setWriter(address(0xBAD));
     }
 
+    function test_constructorRejectsZeroWriter() public {
+        vm.expectRevert(ChogSoul.ZeroAddress.selector);
+        new ChogSoul(address(0));
+    }
+
+    function test_setWriterRejectsZero() public {
+        vm.expectRevert(ChogSoul.ZeroAddress.selector);
+        soul.setWriter(address(0));
+    }
+
     function test_batchOf100Fits() public {
         uint256[] memory ids = new uint256[](100);
         ChogSoul.Soul[] memory s = new ChogSoul.Soul[](100);
@@ -227,14 +238,17 @@ contract ChogSoul {
     error NotAdmin();
     error LengthMismatch();
     error AxisOutOfRange();
+    error ZeroAddress();
 
     constructor(address writer_) {
+        if (writer_ == address(0)) revert ZeroAddress();
         admin = msg.sender;
         writer = writer_;
     }
 
     function setWriter(address w) external {
         if (msg.sender != admin) revert NotAdmin();
+        if (w == address(0)) revert ZeroAddress();
         writer = w;
         emit WriterChanged(w);
     }
@@ -259,7 +273,7 @@ contract ChogSoul {
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `cd contracts && forge test -vv`
-Expected: 8 tests PASS. Note the gas for `test_batchOf100Fits`; it should be well under Monad's block gas limit.
+Expected: 10 tests PASS. Note the gas for `test_batchOf100Fits`; it should be well under Monad's block gas limit.
 
 - [ ] **Step 6: Commit**
 
@@ -283,16 +297,18 @@ git commit -m "feat(contracts): ChogSoul with single-writer batched updates"
 Run:
 ```bash
 cast wallet new   # deployer/admin
-cast wallet new   # soul writer (goes into Vercel env later)
+cast wallet new   # soul writer
+cast wallet import chog-deployer --interactive
+cast wallet import chog-writer --interactive
 ```
-Store both private keys in a password manager. Never commit them.
+Store both private keys in a password manager. Keys live only in Foundry keystores, never in `.env` or on the command line.
 
-`contracts/.env.example`:
+`contracts/.env.example` (public values only):
 ```bash
-DEPLOYER_KEY=0x...
+DEPLOYER_ACCOUNT=chog-deployer
+DEPLOYER_ADDRESS=0x...
 WRITER_ADDRESS=0x...
 ```
-Copy it to `contracts/.env` and fill in the values (`.env*` is gitignored; `.env.example` is allowed).
 
 - [ ] **Step 2: Fund both from the faucet**
 
@@ -304,9 +320,10 @@ Expected: non-zero for both.
 
 Run:
 ```bash
-cd contracts && source .env
-forge create src/ChogSoul.sol:ChogSoul --rpc-url monad_testnet --private-key $DEPLOYER_KEY --broadcast --constructor-args $WRITER_ADDRESS
+cd contracts
+forge create src/ChogSoul.sol:ChogSoul --rpc-url monad_testnet --account chog-deployer --broadcast --constructor-args <WRITER_ADDRESS>
 ```
+Build and deploy from one environment (WSL here). A `cache/` built by Windows forge makes WSL forge fail with `could not find artifact`; run `forge clean` first.
 Expected: `Deployed to: 0x...`.
 
 - [ ] **Step 4: Smoke-test onchain**
@@ -1162,7 +1179,8 @@ export async function runSoulJob(): Promise<{ updated: number; tx: string | null
   const rows = (await sql`
     select a.token_id, to_char(a.day, 'YYYY-MM-DD') as day, a.owner, a.totals
     from activity a left join souls s on s.token_id = a.token_id
-    where a.day < current_date and (s.last_day is null or a.day > s.last_day)`) as Array<{ token_id: number; day: string; owner: string; totals: unknown }>;
+    where a.day < current_date - 1 -- 2-day lag: every timezone has finished the day
+      and (s.last_day is null or a.day > s.last_day)`) as Array<{ token_id: number; day: string; owner: string; totals: unknown }>;
   if (rows.length === 0) return { updated: 0, tx: null };
 
   const ids = [...new Set(rows.map((r) => r.token_id))];
@@ -1256,11 +1274,14 @@ Expected: PASS.
 
 1. `cd web && npx vercel link`, then add the env vars from `.env.example` with `npx vercel env add <NAME>` (`SOUL_WRITER_KEY` is the testnet writer key from Task 2; `CRON_SECRET` is a random string).
 2. `npx vercel deploy --prod`.
-3. In the Neon SQL editor, insert a fake past Activity row:
+3. In the Neon SQL editor, insert a fake Activity row for yesterday (too recent to apply):
    ```sql
    insert into activity (token_id, day, owner, totals) values (5, current_date - 1, '0x0000000000000000000000000000000000000001', '{"minutes":{"coding":480,"chat":60},"lateMinutes":0,"earlyMinutes":0}');
    ```
-4. Run `curl -H "Authorization: Bearer $CRON_SECRET" https://<deployment>/api/cron/soul`.
+   Run `curl -H "Authorization: Bearer $CRON_SECRET" https://<deployment>/api/cron/soul`.
+   Expected: `{"updated":0,"tx":null}` (the 2-day lag holds yesterday back).
+4. Move the row back one day: `update activity set day = current_date - 2 where owner = '0x0000000000000000000000000000000000000001';`
+   Run the same curl.
    Expected: `{"updated":1,"tx":"0x..."}`.
 5. Run `cast call $SOUL_CONTRACT "getSoul(uint256)((uint8,uint8,uint8,uint8,uint32,uint16))" 5 --rpc-url https://testnet-rpc.monad.xyz`.
    Expected: level 1, ownerCount 1, grinder = base + 3.
@@ -1284,7 +1305,7 @@ git commit -m "feat(web): daily Soul Drift job writes batched Souls onchain"
 - Test: `web/test/diary.test.ts`
 
 **Interfaces:**
-- Consumes: `requireSession`, `unauthorized`, `ownerOf`, `parseDailyTotals`, `fetchChogMetadata`, `pickArchetype`, `ARCHETYPES`, `type ArchetypeId`, `type DailyTotals`.
+- Consumes: `requireSession`, `unauthorized`, `ownerOf`, `assertTokenId`, `parseDailyTotals`, `fetchChogMetadata`, `pickArchetype`, `ARCHETYPES`, `type ArchetypeId`, `type DailyTotals`.
 - Produces:
   - `buildDiaryPrompt(archetype: ArchetypeId, chogName: string, t: DailyTotals): string`
   - `templateDiary(archetype: ArchetypeId, t: DailyTotals): string`
@@ -1433,7 +1454,7 @@ export async function generateDiary(
 
 `web/app/api/diary/route.ts`:
 ```ts
-import { fetchChogMetadata, parseDailyTotals, pickArchetype } from '@chog/core';
+import { assertTokenId, fetchChogMetadata, parseDailyTotals, pickArchetype } from '@chog/core';
 import { generateDiary } from '@/lib/diary';
 import { ownerOf } from '@/lib/owner';
 import { requireSession, unauthorized } from '@/lib/session';
@@ -1451,7 +1472,7 @@ export async function POST(req: Request) {
     const b = await req.json();
     tokenId = b.tokenId;
     totals = parseDailyTotals(b.totals);
-    if (!Number.isInteger(tokenId)) throw new TypeError('tokenId');
+    assertTokenId(tokenId); // out-of-range id is a 400, not a 500 from ownerOf
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 400 });
   }
@@ -1482,7 +1503,7 @@ git commit -m "feat(web): Diary generation with Gemini and template fallback"
 
 ## Not in this plan
 
-- Integration plan (days 6-8): the app-side SIWE page and loopback, Chog picker, Activity upload, Diary display, Judge Mode, GitHub + Calendar.
+- Integration plan (days 6-8): the app-side SIWE page and loopback, Chog picker, Activity upload, Diary display, Judge Mode, GitHub + Calendar. Activity upload rule: `day` is the Owner's local date. After local midnight the app must send one final upload of the previous day's complete totals and keep them until it succeeds (today `app/src/main/main.ts` resets totals at rollover without uploading). Souls show a day's Activity about 2 days later because of the cron lag.
 - Later-phase plan (days 9-11): `FocusPool`, mock $CHOG, settlement oracle, Chog Park page.
 
 Write each when its prerequisites are merged.
