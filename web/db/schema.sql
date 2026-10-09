@@ -31,3 +31,14 @@ create table if not exists souls (
   last_owner text not null,
   last_day date not null
 );
+
+-- Gemini diary calls per wallet per day (a count only, never diary text). Pruned after 7 days.
+create table if not exists diary_usage (
+  address text not null,
+  day date not null,
+  count int not null,
+  primary key (address, day)
+);
+
+create index if not exists nonces_created_at on nonces (created_at);
+create index if not exists sessions_created_at on sessions (created_at);

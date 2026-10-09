@@ -49,8 +49,9 @@ export async function generateDiary(
   t: DailyTotals,
   fetchImpl: typeof fetch = fetch,
   timeoutMs = 10_000, // overloaded models can hang 15s+; fall back to the template instead
+  allowGemini = true, // false once the caller is over its daily Gemini cap
 ): Promise<{ text: string; source: 'gemini' | 'template' }> {
-  const key = process.env.GEMINI_API_KEY;
+  const key = allowGemini ? process.env.GEMINI_API_KEY : undefined;
   // A "-latest" alias never gets retired the way pinned versions do (gemini-2.5-flash is closed to new keys).
   const model = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
   if (key) {

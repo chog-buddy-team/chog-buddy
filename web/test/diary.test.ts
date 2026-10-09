@@ -54,6 +54,13 @@ describe('generateDiary', () => {
     const r = await generateDiary('hype', 'CHOG #5', t, fetchImpl, 50);
     expect(r.source).toBe('template');
   });
+  it('uses the template without calling Gemini when over the daily cap', async () => {
+    process.env.GEMINI_API_KEY = 'k';
+    const fetchImpl = vi.fn();
+    const r = await generateDiary('hype', 'CHOG #5', t, fetchImpl as unknown as typeof fetch, 10_000, false);
+    expect(r.source).toBe('template');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
   it('falls back to template on network failure', async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error('offline'));
     expect((await generateDiary('hype', 'CHOG #5', t, fetchImpl)).source).toBe('template');
