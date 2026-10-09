@@ -58,16 +58,20 @@ describe('startSignIn', () => {
   });
   it('oversized body returns 413', async () => {
     const s = begin();
-    const { port } = await s.ready;
+    const { port, state } = await s.ready;
     const oversized = JSON.stringify({ state: 'x'.repeat(10_001), token: 't', address: 'a' });
     const res = await post(port, oversized);
     expect(res.status).toBe(413);
+    await post(port, JSON.stringify({ state, token: 'ok', address: '0x1' }));
+    await expect(s.p).resolves.toMatchObject({ token: 'ok' });
   });
   it('wrong origin returns 403', async () => {
     const s = begin();
     const { port, state } = await s.ready;
     const res = await post(port, JSON.stringify({ state, token: 'tok', address: '0xabc' }), 'https://wrong.origin');
     expect(res.status).toBe(403);
+    await post(port, JSON.stringify({ state, token: 'ok', address: '0x1' }));
+    await expect(s.p).resolves.toMatchObject({ token: 'ok' });
   });
   it('text/plain body returns 415', async () => {
     const s = begin();
@@ -78,14 +82,17 @@ describe('startSignIn', () => {
       body: JSON.stringify({ state, token: 'tok', address: '0xabc' })
     });
     expect(res.status).toBe(415);
+    await post(port, JSON.stringify({ state, token: 'ok', address: '0x1' }));
+    await expect(s.p).resolves.toMatchObject({ token: 'ok' });
   });
   it('OPTIONS returns 204 with CORS headers', async () => {
     const s = begin();
-    const { port } = await s.ready;
+    const { port, state } = await s.ready;
     const res = await fetch(`http://127.0.0.1:${port}/callback`, { method: 'OPTIONS' });
     expect(res.status).toBe(204);
     expect(res.headers.get('access-control-allow-origin')).toBe(API);
-    s.p.catch(() => {});
+    await post(port, JSON.stringify({ state, token: 'ok', address: '0x1' }));
+    await expect(s.p).resolves.toMatchObject({ token: 'ok' });
   });
   it('after successful callback, second POST fails', async () => {
     const s = begin();
@@ -93,13 +100,6 @@ describe('startSignIn', () => {
     await post(port, JSON.stringify({ state, token: 'tok', address: '0xabc' }));
     await expect(s.p).resolves.toEqual({ token: 'tok', address: '0xabc' });
 
-    // Try second request after server closed
-    await new Promise(r => setTimeout(r, 100));
-    const res = await fetch(`http://127.0.0.1:${port}/callback`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', origin: API },
-      body: '{}'
-    }).catch(() => ({ status: 0 }));
-    expect([0, 'ECONNREFUSED']).toContain(res.status === 0 ? 'ECONNREFUSED' : res.status);
+    await expect(post(port, '{}')).rejects.toThrow();
   });
 });

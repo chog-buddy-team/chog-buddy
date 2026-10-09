@@ -49,9 +49,7 @@ export function startSignIn(opts: { apiUrl: string; open: (url: string) => void;
         totalBytes += c.length;
         if (totalBytes > 10_000) {
           req.removeAllListeners('data');
-          req.removeAllListeners('end');
-          req.destroy();
-          return void res.writeHead(413, { 'connection': 'close' }).end();
+          return void res.writeHead(413, { 'connection': 'close' }).end(() => req.destroy());
         }
         chunks.push(c);
       });
