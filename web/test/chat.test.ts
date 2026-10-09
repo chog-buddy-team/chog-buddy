@@ -30,7 +30,8 @@ describe('buildChatSystemPrompt', () => {
     const p = buildChatSystemPrompt('grump', 'CHOG #5');
     expect(p).toContain('CHOG #5');
     expect(p).toContain('Grump Chog');
-    expect(p).toMatch(/60 words/);
+    expect(p).toMatch(/25 words/);
+    expect(p).toMatch(/match the length/i);
   });
 });
 
@@ -51,6 +52,7 @@ describe('generateChat', () => {
     const body = JSON.parse(f.mock.calls[0][1].body);
     expect(body.systemInstruction.parts[0].text).toContain('Grump Chog');
     expect(body.contents).toEqual([{ role: 'user', parts: [{ text: 'hi' }] }]);
+    expect(body.generationConfig.maxOutputTokens).toBe(100);
   });
   it('answers in character without calling Gemini when over the cap', async () => {
     process.env.GEMINI_API_KEY = 'k';
