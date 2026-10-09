@@ -16,6 +16,7 @@ export function startSignIn(opts: { apiUrl: string; open: (url: string) => void;
       done = true;
       clearTimeout(timer);
       server.close();
+      server.closeAllConnections?.();
       if (err) reject(err);
       else resolve(value!);
     };
@@ -24,24 +25,57 @@ export function startSignIn(opts: { apiUrl: string; open: (url: string) => void;
       if (req.url !== '/callback') return void res.writeHead(404).end();
       if (req.method === 'OPTIONS') return void res.writeHead(204).end();
       if (req.method !== 'POST') return void res.writeHead(405).end();
-      let raw = '';
-      req.on('data', (c) => {
-        raw += c;
-        if (raw.length > 10_000) req.destroy();
+
+      // Check origin header if present
+      if (req.headers.origin && req.headers.origin !== origin) {
+        return void res.writeHead(403).end();
+      }
+
+      // Check content-type header
+      const contentType = req.headers['content-type'];
+      if (!contentType || !contentType.startsWith('application/json')) {
+        return void res.writeHead(415).end();
+      }
+
+      // Check content-length early
+      const contentLength = parseInt(req.headers['content-length'] ?? '0', 10);
+      if (contentLength > 10_000) {
+        return void res.writeHead(413, { 'connection': 'close' }).end();
+      }
+
+      const chunks: Buffer[] = [];
+      let totalBytes = 0;
+      req.on('data', (c: Buffer) => {
+        totalBytes += c.length;
+        if (totalBytes > 10_000) {
+          req.removeAllListeners('data');
+          req.removeAllListeners('end');
+          req.destroy();
+          return void res.writeHead(413, { 'connection': 'close' }).end();
+        }
+        chunks.push(c);
       });
       req.on('end', () => {
+        const raw = Buffer.concat(chunks).toString('utf-8');
         let body: { state?: unknown; token?: unknown; address?: unknown };
         try {
           body = JSON.parse(raw);
         } catch {
           return void res.writeHead(400).end();
         }
+        if (!body || typeof body !== 'object') return void res.writeHead(400).end();
         if (body.state !== state) return void res.writeHead(403).end();
         if (typeof body.token !== 'string' || typeof body.address !== 'string') return void res.writeHead(400).end();
         res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
         finish(null, { token: body.token, address: body.address });
       });
     });
+
+    server.requestTimeout = 10_000;
+    server.headersTimeout = 10_000;
+    server.keepAliveTimeout = 1_000;
+    server.on('error', (e) => finish(e));
+
     const timer = setTimeout(() => finish(new Error('sign-in timed out')), opts.timeoutMs ?? 300_000);
     server.listen(0, '127.0.0.1', () => {
       const port = (server.address() as { port: number }).port;
