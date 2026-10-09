@@ -1,6 +1,6 @@
 import { ARCHETYPES, type ArchetypeId, type Category, type DailyTotals } from '@chog/core';
 
-const VOICE: Record<ArchetypeId, string> = {
+export const VOICE: Record<ArchetypeId, string> = {
   hype: 'over-the-top hype friend, all caps energy, supportive',
   grump: 'grumpy, sarcastic, secretly caring',
   lazySage: 'sleepy zen philosopher, short wise sentences',
