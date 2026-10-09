@@ -297,16 +297,18 @@ git commit -m "feat(contracts): ChogSoul with single-writer batched updates"
 Run:
 ```bash
 cast wallet new   # deployer/admin
-cast wallet new   # soul writer (goes into Vercel env later)
+cast wallet new   # soul writer
+cast wallet import chog-deployer --interactive
+cast wallet import chog-writer --interactive
 ```
-Store both private keys in a password manager. Never commit them.
+Store both private keys in a password manager. Keys live only in Foundry keystores, never in `.env` or on the command line.
 
-`contracts/.env.example`:
+`contracts/.env.example` (public values only):
 ```bash
-DEPLOYER_KEY=0x...
+DEPLOYER_ACCOUNT=chog-deployer
+DEPLOYER_ADDRESS=0x...
 WRITER_ADDRESS=0x...
 ```
-Copy it to `contracts/.env` and fill in the values (`.env*` is gitignored; `.env.example` is allowed).
 
 - [ ] **Step 2: Fund both from the faucet**
 
@@ -318,9 +320,10 @@ Expected: non-zero for both.
 
 Run:
 ```bash
-cd contracts && source .env
-forge create src/ChogSoul.sol:ChogSoul --rpc-url monad_testnet --private-key $DEPLOYER_KEY --broadcast --constructor-args $WRITER_ADDRESS
+cd contracts
+forge create src/ChogSoul.sol:ChogSoul --rpc-url monad_testnet --account chog-deployer --broadcast --constructor-args <WRITER_ADDRESS>
 ```
+Build and deploy from one environment (WSL here). A `cache/` built by Windows forge makes WSL forge fail with `could not find artifact`; run `forge clean` first.
 Expected: `Deployed to: 0x...`.
 
 - [ ] **Step 4: Smoke-test onchain**
