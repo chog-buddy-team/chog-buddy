@@ -9,10 +9,13 @@ export function localMidnightDeadline(now: Date, midnightOf: (now: Date) => numb
   return Math.min(midnightOf(now), Math.floor(now.getTime() / 1000) + 24 * 3600);
 }
 
+// Margin for the stake tx to be mined; the contract checks the deadline against the block time.
+const MINING_MARGIN_S = 120;
+
 // Hour goals run until local midnight, so they need enough of the day left; the sprint always fits.
 export function canPickGoal(goalId: GoalId, now: Date): boolean {
   if (goalId === 0) return true;
-  return localMidnightDeadline(now) - Math.floor(now.getTime() / 1000) >= GOALS[goalId].focusMinutes * 60;
+  return localMidnightDeadline(now) - Math.floor(now.getTime() / 1000) >= GOALS[goalId].focusMinutes * 60 + MINING_MARGIN_S;
 }
 
 export function newProgressKey(): Hex {

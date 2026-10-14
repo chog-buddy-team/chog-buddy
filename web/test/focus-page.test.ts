@@ -22,7 +22,8 @@ describe('canPickGoal', () => {
   });
   it('allows an hour goal only if it still fits before midnight', () => {
     expect(canPickGoal(1, local(23, 0))).toBe(false);
-    expect(canPickGoal(1, local(22, 0))).toBe(true); // exactly 2h left
+    expect(canPickGoal(1, local(22, 0))).toBe(false); // exactly 2h left: the tx could mine too late
+    expect(canPickGoal(1, local(21, 58))).toBe(true); // 2h + 2 min margin
     expect(canPickGoal(1, local(20, 0))).toBe(true);
     expect(canPickGoal(3, local(19, 0))).toBe(false); // 6h needs until 18:00
   });
