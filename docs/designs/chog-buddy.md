@@ -65,7 +65,7 @@ Decision: a **2D pixel Chog assembled from a shared body kit plus the real NFT f
 ## Pet visuals v2: canonical Chog + skins (decided 2026-10-09, details 2026-10-14)
 Supersedes the "real NFT face on a body kit" look above. The pasted NFT faces read poorly at pet size, and official Chog art now gives a full-body reference: a purple spiky hood framing a cream face, pink blush, pink nose and pink hands, a purple body suit, and swappable outfits (helmet, hoodie, jacket, dress).
 - **One uniform, hand-designed 2D Chog**, drawn from the official art, plugged into the existing sprite/atlas system (same 9 animation rows, same Petdex geometry).
-- **Skins** are layers on that body: a default purple suit plus outfit skins (hoodie, jacket, dress, skate gear).
+- **Skins** are layers on that body: a default purple suit plus outfit skins (hoodie, jacket, dress).
 - **"Your NFT skin"**: the owner's Chog NFT traits pick hat, outfit and colours. This is the "use your own traits" feature.
 - **NFT stays essential**: no Chog NFT means no Pet (Judge Mode is labelled demo); the NFT skin is exclusive to its owner; Soul, personality and growth stay bound to the token ID.
 - 3D (img2threejs) is a stretch goal only, after the 2D version ships.
@@ -83,10 +83,11 @@ Supersedes the "real NFT face on a body kit" look above. The pasted NFT faces re
   - Day = Owner-local date. After local midnight the app sends a final upload of the previous day and keeps it until that upload succeeds.
 - **Level:** counts days on which the token was the active pet, plus a bonus for focus streaks.
 - **Contract:** `ChogSoul.batchSet(uint256[] ids, Soul[] souls)` callable by one writer key (testnet-only key in Vercel env). `Soul` struct: 4 axes, level, ownerCount.
+- **Known limit:** if two midnights pass before an upload succeeds, the older day is dropped, because the backend only accepts the last 2 days.
 - **Cron:** Vercel daily cron, with a GitHub Actions scheduled workflow as backup trigger. One batched tx per day. Applies only days at least 2 UTC days old, so an Owner in any timezone has finished the day; Souls show a day's Activity about 2 days later.
 
 ## API (v1)
-`POST /auth/nonce`, `POST /auth/verify` (SIWE), `GET /me/chogs?ids=` (ownerOf check), `GET /chog/:id` (metadata + cached image proxy), `POST /activity` (daily category totals), `POST /diary` (returns text, not stored), `POST /cron/soul` (auth by secret).
+`POST /api/auth/nonce`, `POST /api/auth/verify` (SIWE), `GET /api/me/chogs` (ownerOf check), `GET /api/chog/:id` (metadata + cached image proxy), `POST /api/activity` (daily category totals), `POST /api/diary` (returns text, not stored), `POST /api/cron/soul` (auth by secret).
 
 ## Platform notes
 - **Window:** a small sprite window moved across the screen, not a full-screen overlay. Mac: `setAlwaysOnTop('screen-saver')`, `visibleOnAllWorkspaces`; it hides over fullscreen apps. Test both OSes by day 2.
