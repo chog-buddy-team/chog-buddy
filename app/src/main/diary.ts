@@ -24,6 +24,7 @@ export function appendDiary(dir: string, e: DiaryEntry): void {
 
 export function wipeDiary(dir: string): void {
   rmSync(join(dir, FILE), { force: true });
+  rmSync(join(dir, `${FILE}.tmp`), { force: true });
 }
 
 export function localDiaryPrompt(i: { chogName: string; archetype: ArchetypeId; totals: DailyTotals }): string {

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -12,8 +12,10 @@ describe('diary store', () => {
     for (let i = 0; i < 35; i++) appendDiary(dir, { day: `d${i}`, tokenId: 5, text: 't' });
     expect(loadDiary(dir)).toHaveLength(30);
     expect(loadDiary(dir)[0].day).toBe('d5');
+    writeFileSync(join(dir, 'diary.json.tmp'), 'leftover from a crash');
     wipeDiary(dir);
     expect(existsSync(join(dir, 'diary.json'))).toBe(false);
+    expect(existsSync(join(dir, 'diary.json.tmp'))).toBe(false);
     expect(loadDiary(dir)).toEqual([]);
   });
   it('leaves no .tmp file behind after appending (atomic write)', () => {

@@ -30,7 +30,13 @@ export function cleanFlavour(raw: string): string | null {
 
 export async function flavourLine(i: { template: string; rand: () => number; generate: () => Promise<string> }): Promise<string> {
   if (i.rand() >= FLAVOUR_CHANCE) return i.template;
-  const timeout = new Promise<null>((r) => setTimeout(() => r(null), FLAVOUR_TIMEOUT_MS));
-  const gen = i.generate().then(cleanFlavour, () => null);
-  return (await Promise.race([gen, timeout])) ?? i.template;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((r) => { timer = setTimeout(() => r(null), FLAVOUR_TIMEOUT_MS); });
+  // Any failure (sync throw, rejection, non-string output) falls back to the template.
+  const gen = (async () => cleanFlavour(await i.generate()))().catch(() => null);
+  try {
+    return (await Promise.race([gen, timeout])) ?? i.template;
+  } finally {
+    clearTimeout(timer);
+  }
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FLAVOUR_TIMEOUT_MS, MAX_FLAVOUR, cleanFlavour, flavourLine, flavourPrompt } from '../src/main/flavour';
 
 describe('cleanFlavour', () => {
@@ -17,14 +17,22 @@ describe('flavourLine', () => {
   it('uses a cleaned generated line when the dice say yes', async () => {
     expect(await flavourLine({ template: T, rand: () => 0.1, generate: async () => '"fresh line"' })).toBe('fresh line');
   });
-  it('falls back on error, junk, or timeout', async () => {
+  it('falls back on error or junk', async () => {
     expect(await flavourLine({ template: T, rand: () => 0.1, generate: async () => { throw new Error('x'); } })).toBe(T);
+    expect(await flavourLine({ template: T, rand: () => 0.1, generate: () => { throw new Error('sync'); } })).toBe(T);
+    expect(await flavourLine({ template: T, rand: () => 0.1, generate: async () => 42 as unknown as string })).toBe(T);
     expect(await flavourLine({ template: T, rand: () => 0.1, generate: async () => '' })).toBe(T);
-    const slow = () => new Promise<string>((r) => setTimeout(() => r('late'), FLAVOUR_TIMEOUT_MS + 500));
-    const t0 = Date.now();
-    expect(await flavourLine({ template: T, rand: () => 0.1, generate: slow })).toBe(T);
-    expect(Date.now() - t0).toBeLessThan(FLAVOUR_TIMEOUT_MS + 400);
-  }, 10_000);
+  });
+  it('falls back on timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const line = flavourLine({ template: T, rand: () => 0.1, generate: () => new Promise<string>(() => {}) });
+      await vi.advanceTimersByTimeAsync(FLAVOUR_TIMEOUT_MS);
+      expect(await line).toBe(T);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('flavourPrompt', () => {
