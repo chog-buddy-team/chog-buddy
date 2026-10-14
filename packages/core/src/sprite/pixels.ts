@@ -40,6 +40,16 @@ export class PixelBuffer {
       }
   }
 
+  fillTriangle(a: [number, number], b: [number, number], c: [number, number], col: Rgba): void {
+    const s = (p: [number, number], q: [number, number], r: [number, number]) => (p[0] - r[0]) * (q[1] - r[1]) - (q[0] - r[0]) * (p[1] - r[1]);
+    for (let y = Math.floor(Math.min(a[1], b[1], c[1])); y <= Math.ceil(Math.max(a[1], b[1], c[1])); y++)
+      for (let x = Math.floor(Math.min(a[0], b[0], c[0])); x <= Math.ceil(Math.max(a[0], b[0], c[0])); x++) {
+        const p: [number, number] = [x + 0.5, y + 0.5];
+        const d1 = s(p, a, b), d2 = s(p, b, c), d3 = s(p, c, a);
+        if (!((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0))) this.set(x, y, col);
+      }
+  }
+
   blit(src: PixelBuffer, dx: number, dy: number, mask?: (x: number, y: number) => boolean): void {
     for (let y = 0; y < src.height; y++)
       for (let x = 0; x < src.width; x++) {
