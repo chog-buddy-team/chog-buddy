@@ -1,6 +1,6 @@
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { DailyTotals } from '@chog/core';
+import { isSkinId, type DailyTotals, type SkinId } from '@chog/core';
 import { dayKey, emptyTotals } from './tally';
 
 export type ChatPrefs = { provider: 'auto' | 'server' | 'ollama' | 'gemini'; ollamaModel: string; geminiKeyEnc: string | null };
@@ -15,6 +15,7 @@ export type Settings = {
   lastUpload: number;
   lastOwnershipCheck: number;
   yesterday: { day: string; totals: DailyTotals } | null;
+  skin: SkinId;
 };
 
 const DEMO_TOKEN_ID = 5; // replaced by the signed-in Owner's choice in the integration plan
@@ -26,11 +27,11 @@ const plainObject = (v: unknown) => (v && typeof v === 'object' && !Array.isArra
 export function loadSettings(dir: string): Settings {
   const defaults: Settings = {
     tokenId: DEMO_TOKEN_ID, focusMode: false, today: { day: dayKey(new Date()), totals: emptyTotals() }, chat: { ...CHAT_DEFAULTS },
-    judgeMode: false, session: null, secrets: { githubEnc: null, icalEnc: null }, lastUpload: 0, lastOwnershipCheck: 0, yesterday: null,
+    judgeMode: false, session: null, secrets: { githubEnc: null, icalEnc: null }, lastUpload: 0, lastOwnershipCheck: 0, yesterday: null, skin: 'classic',
   };
   try {
     const saved = JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'));
-    return { ...defaults, ...saved, chat: { ...CHAT_DEFAULTS, ...plainObject(saved?.chat) }, secrets: { ...defaults.secrets, ...plainObject(saved?.secrets) } };
+    return { ...defaults, ...saved, chat: { ...CHAT_DEFAULTS, ...plainObject(saved?.chat) }, secrets: { ...defaults.secrets, ...plainObject(saved?.secrets) }, skin: isSkinId(saved?.skin) ? saved.skin : 'classic' };
   } catch {
     return defaults;
   }
