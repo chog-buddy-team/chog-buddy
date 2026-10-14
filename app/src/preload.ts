@@ -3,6 +3,7 @@ import type { AnimName, SkinId, Trait } from '@chog/core';
 
 export type InitPayload = { imageBytes: Uint8Array; attributes: Trait[]; side: 'Left' | 'Right'; name: string; skin: SkinId };
 export type AnimPayload = { anim: AnimName; paused: boolean };
+export type ChatMode = 'chat' | 'key' | 'github' | 'ical';
 
 const api = {
   onInit: (cb: (p: InitPayload) => void) => { ipcRenderer.on('init', (_e, p) => cb(p)); },
@@ -14,7 +15,7 @@ const api = {
   dragStart: () => ipcRenderer.send('drag-start'),
   dragMove: (x: number, y: number) => ipcRenderer.send('drag-move', { x, y }),
   dragEnd: () => ipcRenderer.send('drag-end'),
-  onChatOpen: (cb: (p: { mode: 'chat' | 'key' }) => void) => { ipcRenderer.on('chat-open', (_e, p) => cb(p)); },
+  onChatOpen: (cb: (p: { mode: ChatMode }) => void) => { ipcRenderer.on('chat-open', (_e, p) => cb(p)); },
   onChatToken: (cb: (t: string) => void) => { ipcRenderer.on('chat-token', (_e, t) => cb(t)); },
   onChatReplace: (cb: (t: string) => void) => { ipcRenderer.on('chat-replace', (_e, t) => cb(t)); },
   onChatDone: (cb: (p: { failed: boolean }) => void) => { ipcRenderer.on('chat-done', (_e, p) => cb(p)); },
@@ -23,6 +24,7 @@ const api = {
   keySubmit: (key: string) => ipcRenderer.send('key-submit', key),
   chatClose: () => ipcRenderer.send('chat-close'),
   petClick: () => ipcRenderer.send('pet-click'),
+  onHistory: (cb: (p: { name: string; messages: Array<{ role: string; content: string; at: number }> }) => void) => { ipcRenderer.on('history-data', (_e, p) => cb(p)); },
 };
 
 contextBridge.exposeInMainWorld('chog', api);

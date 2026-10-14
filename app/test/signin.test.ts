@@ -91,6 +91,7 @@ describe('startSignIn', () => {
     const res = await fetch(`http://127.0.0.1:${port}/callback`, { method: 'OPTIONS' });
     expect(res.status).toBe(204);
     expect(res.headers.get('access-control-allow-origin')).toBe(API);
+    expect(res.headers.get('access-control-allow-private-network')).toBe('true');
     await post(port, JSON.stringify({ state, token: 'ok', address: '0x1' }));
     await expect(s.p).resolves.toMatchObject({ token: 'ok' });
   });

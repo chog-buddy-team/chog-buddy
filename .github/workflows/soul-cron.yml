@@ -7,4 +7,5 @@ jobs:
   trigger:
     runs-on: ubuntu-latest
     steps:
-      - run: curl -fsS -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "${{ secrets.WEB_URL }}/api/cron/soul"
+      - run: |
+          curl -fsS -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "${{ secrets.WEB_URL }}/api/cron/soul"

@@ -1,11 +1,11 @@
 import { ProviderError, type ChatMessage, type ChatProvider } from './types';
 
-export type ProviderPref = 'auto' | 'ollama' | 'gemini';
+export type ProviderPref = 'auto' | 'server' | 'ollama' | 'gemini';
 export const HISTORY_CAP = 20;
 export const MAX_INPUT = 500;
 
 const LINES: Record<ProviderError['kind'] | 'none', string> = {
-  none: "I can't think yet! Install Ollama, or add a Gemini key from my tray menu.",
+  none: "I can't think right now! Check the internet, or pick Ollama / a Gemini key in my tray menu.",
   auth: "My Gemini key isn't working. Set a new one from the tray menu?",
   quota: "I'm all talked out for now (free tier limit). Try again in a bit!",
   network: "I can't reach my brain right now. Is the internet (or Ollama) on?",
@@ -15,7 +15,7 @@ const LINES: Record<ProviderError['kind'] | 'none', string> = {
 export const errorLine = (kind: ProviderError['kind'] | 'none') => LINES[kind];
 
 export async function pickProvider(pref: ProviderPref, providers: ChatProvider[]): Promise<ChatProvider | null> {
-  const order = pref === 'auto' ? ['ollama', 'gemini'] : [pref];
+  const order = pref === 'auto' ? ['server', 'ollama', 'gemini'] : [pref];
   for (const id of order) {
     const p = providers.find((x) => x.id === id);
     if (p && (await p.available())) return p;
