@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, safeStorage, screen, Tray } from 'electron';
 import path from 'node:path';
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { ARCHETYPES, categorize, fetchChogMetadata, ipfsToHttp, pickArchetype, type ArchetypeId, type ChogMetadata } from '@chog/core';
+import { ARCHETYPES, SKIN_IDS, categorize, fetchChogMetadata, ipfsToHttp, pickArchetype, type ArchetypeId, type ChogMetadata } from '@chog/core';
 import { clampX, stepWalk, type WalkState } from './walker';
 import { loadSettings, saveSettings, type Settings } from './store';
 import { detectTrigger, initialState, pickLine, type ReactionState, type Trigger } from './reactions';
@@ -178,7 +178,7 @@ async function start() {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   await win.loadFile(path.join(__dirname, 'index.html'));
   const side = meta.attributes.find((a) => a.trait_type === 'Side')?.value === 'Left' ? 'Left' : 'Right';
-  win.webContents.send('init', { imageBytes, attributes: meta.attributes, side, name: meta.name });
+  win.webContents.send('init', { imageBytes, attributes: meta.attributes, side, name: meta.name, skin: settings.skin });
 
   let last = Date.now();
   setInterval(() => {
@@ -254,6 +254,19 @@ async function start() {
     tray!.setContextMenu(
       Menu.buildFromTemplate([
         { label: `${meta.name} · ${ARCHETYPES[archetype].name}`, enabled: false },
+        {
+          label: 'Skin',
+          submenu: SKIN_IDS.map((id) => ({
+            label: { classic: 'Classic Chog', hoodie: 'Hoodie', jacket: 'Jacket', dress: 'Dress', nft: "My NFT skin (your Chog's traits)" }[id],
+            type: 'radio' as const,
+            checked: settings.skin === id,
+            click: () => {
+              settings.skin = id;
+              saveSettings(app.getPath('userData'), settings);
+              win?.webContents.send('set-skin', id);
+            },
+          })),
+        },
         { type: 'separator' },
         {
           label: 'Focus Mode',

@@ -1,4 +1,4 @@
-import { ATLAS_ROWS, FRAME_H, FRAME_W, PRESET_SKINS, PixelBuffer, buildAtlas, frameAt, type AnimName } from '../../../packages/core/src/sprite'; // sprite-only: keeps viem out of the renderer bundle
+import { ATLAS_ROWS, FRAME_H, FRAME_W, PixelBuffer, buildAtlas, frameAt, samplePalette, skinFor, type AnimName, type SkinId } from '../../../packages/core/src/sprite'; // sprite-only: keeps viem out of the renderer bundle
 import type { ChogApi, InitPayload } from '../preload';
 
 declare global {
@@ -9,6 +9,9 @@ const pet = document.getElementById('pet') as HTMLCanvasElement;
 const ctx = pet.getContext('2d')!;
 const bubble = document.getElementById('bubble') as HTMLDivElement;
 let atlas: HTMLCanvasElement | null = null;
+let init: InitPayload | null = null;
+let nftPixels: Promise<PixelBuffer | null> | null = null; // the NFT image, decoded on first use by the nft skin
+let rebuilds = 0; // only the newest rebuild may swap the atlas and send the PNG
 let anim: AnimName = 'idle';
 let animStart = performance.now();
 let paused = false;
@@ -24,21 +27,38 @@ async function decode(bytes: Uint8Array): Promise<PixelBuffer> {
   return new PixelBuffer(d.width, d.height, d.data);
 }
 
-async function build(p: InitPayload) {
-  const nft = await decode(p.imageBytes);
-  const atlasBuf = buildAtlas(PRESET_SKINS.classic);
+async function rebuild(id: SkinId) {
+  const p = init;
+  if (!p) return;
+  const mine = ++rebuilds;
+  // Only the nft skin reads the image; a failed decode falls back to the default colours.
+  const nft = id === 'nft' ? await (nftPixels ??= decode(p.imageBytes).catch(() => null)) : null;
+  if (mine !== rebuilds) return;
+  const atlasBuf = buildAtlas(skinFor(id, { attributes: p.attributes, palette: nft ? samplePalette(nft, p.side) : null }));
   const c = document.createElement('canvas');
   c.width = atlasBuf.width;
   c.height = atlasBuf.height;
   c.getContext('2d')!.putImageData(new ImageData(atlasBuf.data as ImageDataArray, atlasBuf.width, atlasBuf.height), 0, 0);
   atlas = c;
-  pet.title = p.name;
+  if (paused) drawFrame(0); // the draw loop is idle while paused, so show the new skin now
   const blob = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/png'));
-  if (blob) window.chog.atlasReady(new Uint8Array(await blob.arrayBuffer()));
+  const png = blob && new Uint8Array(await blob.arrayBuffer());
+  if (png && mine === rebuilds) window.chog.atlasReady(png);
+}
+
+async function build(p: InitPayload) {
+  init = p;
+  nftPixels = null;
+  pet.title = p.name;
+  await rebuild(p.skin);
 }
 
 window.chog.onInit((p) => {
   build(p).catch((e) => window.chog.atlasError(String(e)));
+});
+
+window.chog.onSetSkin((id) => {
+  rebuild(id).catch((e) => window.chog.atlasError(String(e)));
 });
 
 window.chog.onAnim((a) => {

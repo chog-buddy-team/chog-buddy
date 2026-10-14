@@ -38,4 +38,12 @@ describe('settings store', () => {
     writeFileSync(join(dir, 'settings.json'), JSON.stringify({ chat: { provider: 'gemini' } }));
     expect(loadSettings(dir).chat).toEqual({ provider: 'gemini', ollamaModel: 'llama3.2', geminiKeyEnc: null });
   });
+  it('defaults skin to classic and rejects unknown skins', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    expect(loadSettings(dir).skin).toBe('classic');
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ skin: 'banana' }));
+    expect(loadSettings(dir).skin).toBe('classic');
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ skin: 'nft' }));
+    expect(loadSettings(dir).skin).toBe('nft');
+  });
 });

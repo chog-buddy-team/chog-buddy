@@ -69,7 +69,7 @@ Supersedes the "real NFT face on a body kit" look above. The pasted NFT faces re
 - **"Your NFT skin"**: the owner's Chog NFT traits pick hat, outfit and colours. This is the "use your own traits" feature.
 - **NFT stays essential**: no Chog NFT means no Pet (Judge Mode is labelled demo); the NFT skin is exclusive to its owner; Soul, personality and growth stay bound to the token ID.
 - 3D (img2threejs) is a stretch goal only, after the 2D version ships.
-- Still open (needs a short design round before planning): art style (pixel vs flat cartoon), the exact skin list, and how NFT traits map onto skin layers.
+- Decided 2026-10-14 (ADR 0005): pixel style; skins Classic/Hoodie/Jacket/Dress/My NFT skin; NFT skin = Body→outfit, Head→hat, colours sampled from the NFT image.
 
 ## Mechanics (v1 defaults, tune during build)
 - **Archetypes:** 5 archetypes derived from traits (e.g. Hype, Grump, Lazy Sage, Chaos, Sweetheart). Mapping lives in a JSON table `traits -> archetype + base axes` (e.g. `Eyes=Sleepy -> NightOwl +20`). Gemini later adds flavor text per token, cached once per token.
