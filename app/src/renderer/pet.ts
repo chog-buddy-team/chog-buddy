@@ -32,7 +32,7 @@ async function rebuild(id: SkinId) {
   if (!p) return;
   const mine = ++rebuilds;
   // Only the nft skin reads the image; a failed decode falls back to the default colours.
-  const nft = id === 'nft' ? await (nftPixels ??= decode(p.imageBytes).catch(() => null)) : null;
+  const nft = id === 'nft' ? await (nftPixels ??= decode(p.imageBytes).catch((e) => { console.warn('Chog Buddy: NFT image decode failed, using default colours', e); return null; })) : null;
   if (mine !== rebuilds) return;
   const atlasBuf = buildAtlas(skinFor(id, { attributes: p.attributes, palette: nft ? samplePalette(nft, p.side) : null }));
   const c = document.createElement('canvas');

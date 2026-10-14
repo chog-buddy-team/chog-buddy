@@ -24,7 +24,7 @@ const ROWS: Record<AnimName, RowSpec> = {
   walkEast: { row: 1, durationsMs: [120, 120, 120, 120, 120, 120, 120, 220], poses: WALK },
   walkWest: { row: 2, durationsMs: [120, 120, 120, 120, 120, 120, 120, 220], poses: WALK, mirror: true },
   react: { row: 3, durationsMs: [140, 140, 140, 280], poses: [{ squash: 1, expr: 'happy' }, { headDy: 1, squash: 1, expr: 'happy' }, { lift: 2, armL: -2, armR: -2, expr: 'happy' }, { expr: 'happy' }] },
-  hop: { row: 4, durationsMs: [140, 140, 140, 140, 280], poses: [{ squash: 1 }, { lift: 2, expr: 'happy' }, { lift: 3, armL: -2, armR: -2, expr: 'happy' }, { lift: 2, expr: 'happy' }, { squash: 1 }] },
+  hop: { row: 4, durationsMs: [140, 140, 140, 140, 280], poses: [{ squash: 1, expr: 'happy' }, { lift: 2, expr: 'happy' }, { lift: 3, armL: -2, armR: -2, expr: 'happy' }, { lift: 2, expr: 'happy' }, { squash: 1, expr: 'happy' }] },
   sleep: { row: 5, durationsMs: [400, 400, 400, 400, 400, 400], poses: [0, 0, 1, 1, 1, 0].map((d) => ({ headDy: d, expr: 'closed' as const })) },
   talk: { row: 6, durationsMs: [150, 150, 150, 150, 150, 280], poses: [-3, -4, -3, -4, -3, 0].map((a, i) => ({ armR: a, headDy: i % 2 ? -1 : 0, expr: (i % 2 ? 'open' : 'talk') as Expr })) },
   sad: { row: 7, durationsMs: [300, 300, 300, 300, 300, 300], poses: [0, 0, 1, 1, 0, 0].map((d) => ({ headDy: 1 + d, armL: 1, armR: 1, expr: 'sad' as const })) },

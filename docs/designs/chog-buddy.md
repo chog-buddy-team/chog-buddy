@@ -62,7 +62,7 @@ Decision: a **2D pixel Chog assembled from a shared body kit plus the real NFT f
 - **Bonus:** "Export for Codex/Petdex" saves the atlas so the same Chog runs in other pet apps.
 - 3D is dropped for the hackathon.
 
-## Pet visuals v2: canonical Chog + skins (decided 2026-10-09, design details pending)
+## Pet visuals v2: canonical Chog + skins (decided 2026-10-09, details 2026-10-14)
 Supersedes the "real NFT face on a body kit" look above. The pasted NFT faces read poorly at pet size, and official Chog art now gives a full-body reference: a purple spiky hood framing a cream face, pink blush, pink nose and pink hands, a purple body suit, and swappable outfits (helmet, hoodie, jacket, dress).
 - **One uniform, hand-designed 2D Chog**, drawn from the official art, plugged into the existing sprite/atlas system (same 9 animation rows, same Petdex geometry).
 - **Skins** are layers on that body: a default purple suit plus outfit skins (hoodie, jacket, dress, skate gear).

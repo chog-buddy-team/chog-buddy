@@ -41,7 +41,11 @@ describe('settings store', () => {
   it('defaults skin to classic and rejects unknown skins', () => {
     const dir = mkdtempSync(join(tmpdir(), 'chog-'));
     expect(loadSettings(dir).skin).toBe('classic');
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ focusMode: true }));
+    expect(loadSettings(dir).skin).toBe('classic');
     writeFileSync(join(dir, 'settings.json'), JSON.stringify({ skin: 'banana' }));
+    expect(loadSettings(dir).skin).toBe('classic');
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ skin: 5 }));
     expect(loadSettings(dir).skin).toBe('classic');
     writeFileSync(join(dir, 'settings.json'), JSON.stringify({ skin: 'nft' }));
     expect(loadSettings(dir).skin).toBe('nft');

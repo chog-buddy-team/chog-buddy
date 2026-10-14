@@ -403,6 +403,7 @@ ipcMain.on('atlas-ready', (_e, png: Uint8Array) => {
 });
 ipcMain.on('atlas-error', (_e, message: string) => {
   dialog.showErrorBox('Chog Buddy', `Could not draw your Chog.\n\n${String(message).slice(0, 500)}`);
+  if (atlasPng) return; // a failed skin switch keeps the Chog that is already on screen
   app.quit();
 });
 

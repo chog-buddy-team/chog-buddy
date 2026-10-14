@@ -1,3 +1,5 @@
 # Pixel sprite kit with the real NFT face, not 3D or unique bodies
 
 Chog NFTs are cropped three-quarter busts, so there is no full body to cut out or reconstruct. We render the Pet as a 2D pixel sprite built from one shared, animated body kit whose parts are swapped and recoloured by traits, with the owner's real NFT face pasted onto the head. The result is packed as a Petdex/Codex-format atlas (8x9 frames of 192x208). We rejected a 3D model (it could not be validated against a cropped bust and doubled animation work) and AI-generated unique bodies (they cost money, drift in style across 1,969 tokens, and each would still need animating). Using the real face keeps the NFT essential: without it there is no face.
+
+**Superseded in part by ADR 0005 (2026-10-14):** the pasted NFT face is replaced by one canonical pixel Chog wearing skins. The owner's traits drive the exclusive "My NFT skin".
