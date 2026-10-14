@@ -12,7 +12,7 @@ export const CANON = {
 } as const;
 
 export const HEAD_CY = 21;
-export const EYE_X = [19, 30] as const;
+export const EYE_X = [18, 29] as const;
 const CX = 24;
 const same = (a: Rgba, b: Rgba) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
 
@@ -57,15 +57,15 @@ export function drawCanonHead(b: PixelBuffer, cy: number, expr: Expr, squash: 0 
     }
   }
   b.fillEllipse(15, cy + 9, 2.2, 1.3, C.blush);
-  b.fillEllipse(33.5, cy + 9, 2.2, 1.3, C.blush);
-  b.set(24, cy + 8, C.nose); b.set(25, cy + 8, C.nose);
+  b.fillEllipse(33, cy + 9, 2.2, 1.3, C.blush);
+  b.set(23, cy + 8, C.nose); b.set(24, cy + 8, C.nose);
   if (expr === 'happy' || expr === 'talk') {
-    for (const x of [23, 24, 25, 26]) b.set(x, cy + 10, C.mouth);
-    b.set(24, cy + 11, C.mouth); b.set(25, cy + 11, C.mouth);
+    for (const x of [22, 23, 24, 25]) b.set(x, cy + 10, C.mouth);
+    b.set(23, cy + 11, C.mouth); b.set(24, cy + 11, C.mouth);
   } else if (expr === 'sad') {
-    b.set(23, cy + 11, C.mouth); b.set(24, cy + 10, C.mouth); b.set(25, cy + 10, C.mouth); b.set(26, cy + 11, C.mouth);
+    b.set(22, cy + 11, C.mouth); b.set(23, cy + 10, C.mouth); b.set(24, cy + 10, C.mouth); b.set(25, cy + 11, C.mouth);
   } else {
-    b.set(23, cy + 10, C.mouth); b.set(24, cy + 11, C.mouth); b.set(25, cy + 11, C.mouth); b.set(26, cy + 10, C.mouth);
+    b.set(22, cy + 10, C.mouth); b.set(23, cy + 11, C.mouth); b.set(24, cy + 11, C.mouth); b.set(25, cy + 10, C.mouth);
   }
 }
 
