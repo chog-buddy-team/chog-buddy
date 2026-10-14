@@ -64,12 +64,21 @@ contract FocusPool is ReentrancyGuard, Ownable2Step {
         uint256 indexed betId, address indexed bettor, Goal goal, uint96 amount, uint40 deadline, uint96 bonus, bytes32 progressKeyHash
     );
     event Funded(address indexed from, uint256 amount);
+    event Settled(uint256 indexed betId, bool won);
+    event Claimed(uint256 indexed betId, uint256 payout);
+    event Refunded(uint256 indexed betId);
+    event SettlerChanged(address settler);
 
     error ZeroAddress();
     error AmountOutOfRange();
     error BadDeadline();
     error AlreadyHasOpenBet();
     error PotTooLow();
+    error NotSettler();
+    error NotOpen();
+    error TooEarly();
+    error NotBettor();
+    error NotWon();
 
     constructor(IERC20 token_, address settler_, address owner_) Ownable(owner_) {
         if (address(token_) == address(0) || settler_ == address(0)) revert ZeroAddress();
@@ -103,6 +112,58 @@ contract FocusPool is ReentrancyGuard, Ownable2Step {
     ) external nonReentrant returns (uint256) {
         try IERC20Permit(address(token)).permit(msg.sender, address(this), amount, permitDeadline, v, r, s) {} catch {}
         return _stake(goal, amount, deadline, progressKeyHash);
+    }
+
+    /// @notice Settler records the result. A win may be settled any time while open; a loss only once the deadline has passed.
+    /// @dev A loss burns 10% of the stake and adds 90% to the pot; the reserved bonus is released either way.
+    function settle(uint256 betId, bool won) external {
+        if (msg.sender != settler) revert NotSettler();
+        Bet storage b = bets[betId];
+        if (b.status != Status.Open) revert NotOpen();
+        openBetOf[b.bettor] = 0;
+        if (won) {
+            b.status = Status.Won;
+            emit Settled(betId, true);
+            return;
+        }
+        if (block.timestamp < b.deadline) revert TooEarly();
+        b.status = Status.Lost;
+        reserved -= b.bonus;
+        uint256 burn = uint256(b.amount) * BURN_BPS / 10_000;
+        pot += b.amount - burn;
+        emit Settled(betId, false);
+        token.safeTransfer(DEAD, burn);
+    }
+
+    function claim(uint256 betId) external nonReentrant {
+        Bet storage b = bets[betId];
+        if (b.bettor != msg.sender) revert NotBettor();
+        if (b.status != Status.Won) revert NotWon();
+        b.status = Status.Claimed;
+        pot -= b.bonus;
+        reserved -= b.bonus;
+        uint256 payout = uint256(b.amount) + b.bonus;
+        emit Claimed(betId, payout);
+        token.safeTransfer(msg.sender, payout);
+    }
+
+    /// @notice Safety valve: take your stake back if the bet is still unsettled 2 days after its deadline.
+    function refund(uint256 betId) external nonReentrant {
+        Bet storage b = bets[betId];
+        if (b.bettor != msg.sender) revert NotBettor();
+        if (b.status != Status.Open) revert NotOpen();
+        if (block.timestamp <= uint256(b.deadline) + REFUND_DELAY) revert TooEarly();
+        b.status = Status.Refunded;
+        openBetOf[msg.sender] = 0;
+        reserved -= b.bonus;
+        emit Refunded(betId);
+        token.safeTransfer(msg.sender, b.amount);
+    }
+
+    function setSettler(address s) external onlyOwner {
+        if (s == address(0)) revert ZeroAddress();
+        settler = s;
+        emit SettlerChanged(s);
     }
 
     function fund(uint256 amount) external {

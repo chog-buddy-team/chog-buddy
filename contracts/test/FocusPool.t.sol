@@ -202,4 +202,222 @@ contract FocusPoolTest is Test {
         assertEq(b, 5000);
     }
 
+
+    // ---- settle / claim / refund ----
+
+    function test_winAnytimeThenClaim() public {
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        vm.warp(block.timestamp + 10);
+        vm.expectEmit(true, false, false, true);
+        emit FocusPool.Settled(id, true);
+        vm.prank(settler);
+        pool.settle(id, true);
+        assertEq(pool.openBetOf(alice), 0);
+        vm.expectEmit(true, false, false, true);
+        emit FocusPool.Claimed(id, 10.5e18);
+        vm.prank(alice);
+        pool.claim(id);
+        assertEq(token.balanceOf(alice), 100.5e18);
+        assertEq(pool.pot(), 10_000e18 - 0.5e18);
+        assertEq(pool.reserved(), 0);
+        assertEq(uint8(pool.getBet(id).status), uint8(FocusPool.Status.Claimed));
+    }
+
+    function test_winInsideGraceAfterDeadline() public {
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        vm.warp(pool.getBet(id).deadline + 60);
+        vm.prank(settler);
+        pool.settle(id, true);
+        assertEq(uint8(pool.getBet(id).status), uint8(FocusPool.Status.Won));
+    }
+
+    function test_lossOnlyAfterDeadline() public {
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        vm.prank(settler);
+        vm.expectRevert(FocusPool.TooEarly.selector);
+        pool.settle(id, false);
+        vm.warp(pool.getBet(id).deadline);
+        vm.prank(settler);
+        pool.settle(id, false);
+        assertEq(token.balanceOf(pool.DEAD()), 1e18);
+        assertEq(pool.pot(), 10_000e18 + 9e18);
+        assertEq(pool.reserved(), 0);
+        assertEq(pool.openBetOf(alice), 0);
+        assertEq(uint8(pool.getBet(id).status), uint8(FocusPool.Status.Lost));
+    }
+
+    function test_onlySettler() public {
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        vm.prank(alice);
+        vm.expectRevert(FocusPool.NotSettler.selector);
+        pool.settle(id, true);
+    }
+
+    function test_onlyBettorClaims() public {
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        vm.prank(settler);
+        pool.settle(id, true);
+        vm.prank(settler);
+        vm.expectRevert(FocusPool.NotBettor.selector);
+        pool.claim(id);
+    }
+
+    function test_claimTwice() public {
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        vm.prank(settler);
+        pool.settle(id, true);
+        vm.startPrank(alice);
+        pool.claim(id);
+        vm.expectRevert(FocusPool.NotWon.selector);
+        pool.claim(id);
+        vm.stopPrank();
+    }
+
+    function test_claimLost() public {
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        vm.warp(pool.getBet(id).deadline);
+        vm.prank(settler);
+        pool.settle(id, false);
+        vm.prank(alice);
+        vm.expectRevert(FocusPool.NotWon.selector);
+        pool.claim(id);
+    }
+
+    function test_refundTooEarly() public {
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        vm.warp(pool.getBet(id).deadline + 2 days);
+        vm.prank(alice);
+        vm.expectRevert(FocusPool.TooEarly.selector);
+        pool.refund(id);
+    }
+
+    function test_refundAfterDelay() public {
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        vm.warp(pool.getBet(id).deadline + 2 days + 1);
+        vm.prank(settler);
+        vm.expectRevert(FocusPool.NotBettor.selector);
+        pool.refund(id);
+        vm.expectEmit(true, false, false, false);
+        emit FocusPool.Refunded(id);
+        vm.prank(alice);
+        pool.refund(id);
+        assertEq(token.balanceOf(alice), 100e18);
+        assertEq(pool.reserved(), 0);
+        assertEq(pool.openBetOf(alice), 0);
+    }
+
+    function test_settleAfterRefundReverts() public {
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        vm.warp(pool.getBet(id).deadline + 2 days + 1);
+        vm.prank(alice);
+        pool.refund(id);
+        vm.prank(settler);
+        vm.expectRevert(FocusPool.NotOpen.selector);
+        pool.settle(id, true);
+    }
+
+    function test_refundAfterSettleReverts() public {
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        vm.warp(pool.getBet(id).deadline + 2 days + 1);
+        vm.prank(settler);
+        pool.settle(id, false);
+        vm.prank(alice);
+        vm.expectRevert(FocusPool.NotOpen.selector);
+        pool.refund(id);
+    }
+
+    function test_newBetAfterSettle() public {
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        vm.prank(settler);
+        pool.settle(id, true);
+        uint256 id2 = _approveAndStake(FocusPool.Goal.Sprint, 1e18, 0);
+        assertEq(id2, 2);
+    }
+
+    function test_setSettler() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        pool.setSettler(alice);
+        vm.prank(owner);
+        vm.expectRevert(FocusPool.ZeroAddress.selector);
+        pool.setSettler(address(0));
+        vm.expectEmit(false, false, false, true);
+        emit FocusPool.SettlerChanged(address(0xBEEF));
+        vm.prank(owner);
+        pool.setSettler(address(0xBEEF));
+        assertEq(pool.settler(), address(0xBEEF));
+    }
+
+    function testFuzz_lossAccounting(uint96 amount) public {
+        amount = uint96(bound(amount, 1e18, 100e18));
+        vm.prank(owner);
+        token.mint(alice, 100e18);
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, amount, 0);
+        uint256 potBefore = pool.pot();
+        vm.warp(pool.getBet(id).deadline);
+        vm.prank(settler);
+        pool.settle(id, false);
+        assertEq(token.balanceOf(pool.DEAD()) + (pool.pot() - potBefore), amount);
+        assertEq(token.balanceOf(address(pool)), pool.pot());
+    }
+
+    // ---- gas budgets (measured + 10%; fail if a change makes users pay more) ----
+
+    uint256 constant BUDGET_STAKE_WITH_PERMIT = 226_000;
+    uint256 constant BUDGET_STAKE = 141_000;
+    uint256 constant BUDGET_SETTLE_LOSS = 36_000;
+    uint256 constant BUDGET_CLAIM = 17_500;
+    uint256 constant BUDGET_REFUND = 13_500;
+
+    function _used(uint256 before) internal view returns (uint256) {
+        return before - gasleft();
+    }
+
+    function test_gasBudgets() public {
+        uint256 pd = block.timestamp + 1 hours;
+        (uint8 v, bytes32 r, bytes32 s) = _permitSig(10e18, pd);
+        vm.prank(alice);
+        uint256 g = gasleft();
+        uint256 id = pool.stakeWithPermit(FocusPool.Goal.Sprint, 10e18, 0, H, pd, v, r, s);
+        uint256 gPermit = _used(g);
+
+        vm.prank(settler);
+        pool.settle(id, true);
+        vm.prank(alice);
+        g = gasleft();
+        pool.claim(id);
+        uint256 gClaim = _used(g);
+
+        address b = _fresh("b");
+        vm.prank(b);
+        token.approve(address(pool), 10e18);
+        vm.prank(b);
+        g = gasleft();
+        uint256 id2 = pool.stake(FocusPool.Goal.Sprint, 10e18, 0, H);
+        uint256 gStake = _used(g);
+        vm.warp(pool.getBet(id2).deadline);
+        vm.prank(settler);
+        g = gasleft();
+        pool.settle(id2, false);
+        uint256 gLoss = _used(g);
+
+        address c = _fresh("c");
+        uint256 id3 = _stakeAs(c, FocusPool.Goal.Sprint, 10e18, 0);
+        vm.warp(pool.getBet(id3).deadline + 2 days + 1);
+        vm.prank(c);
+        g = gasleft();
+        pool.refund(id3);
+        uint256 gRefund = _used(g);
+
+        emit log_named_uint("stakeWithPermit", gPermit);
+        emit log_named_uint("stake", gStake);
+        emit log_named_uint("settle(loss)", gLoss);
+        emit log_named_uint("claim", gClaim);
+        emit log_named_uint("refund", gRefund);
+        assertLe(gPermit, BUDGET_STAKE_WITH_PERMIT);
+        assertLe(gStake, BUDGET_STAKE);
+        assertLe(gLoss, BUDGET_SETTLE_LOSS);
+        assertLe(gClaim, BUDGET_CLAIM);
+        assertLe(gRefund, BUDGET_REFUND);
+    }
 }
