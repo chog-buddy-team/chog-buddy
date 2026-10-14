@@ -6,7 +6,7 @@ import type { ChatMode } from '../preload';
 import { clampX, stepWalk, type WalkState } from './walker';
 import { loadSettings, saveSettings, type Settings } from './store';
 import { apiUrl } from './config';
-import { createApi } from './api';
+import { ApiError, createApi } from './api';
 import { seal, unseal, type Cipher } from './secrets';
 import { startSignIn } from './signin';
 import { chooseStartup, decideOwnership, JUDGE_TOKEN_ID, ownershipCheckDue, type Startup } from './startup';
@@ -265,6 +265,7 @@ async function resolveChoice(choice: Startup, base: string): Promise<{ tokenId: 
     if (r.response === 2) return null;
     if (r.response === 1) {
       settings.judgeMode = true;
+      settings.session = null; // a later wallet sign-in must not run the ownership check against the demo token
       return { tokenId: JUDGE_TOKEN_ID, judge: true };
     }
     try {
@@ -288,10 +289,10 @@ async function start() {
   const base = apiUrl();
   const sessionToken = settings.session ? unseal(cipher, settings.session.tokenEnc) : null;
   // Judge Mode never asks the server about ownership.
-  const owned = sessionToken && !settings.judgeMode ? await createApi({ baseUrl: base, token: sessionToken }).myChogs().catch(() => null) : null;
+  const owned = sessionToken && !settings.judgeMode ? await createApi({ baseUrl: base, token: sessionToken }).myChogs().catch((e) => { if (e instanceof ApiError && e.status === 401) settings.session = null; return null; }) : null;
   if (owned !== null) settings.lastOwnershipCheck = Date.now();
   const envTokenId = process.env.CHOG_TOKEN_ID ? Number(process.env.CHOG_TOKEN_ID) : undefined;
-  const startup = chooseStartup({ envTokenId, judgeMode: settings.judgeMode, signedIn: !!sessionToken, owned, savedTokenId: settings.session ? settings.tokenId : null });
+  const startup = chooseStartup({ envTokenId, judgeMode: settings.judgeMode, signedIn: !!sessionToken && !!settings.session, owned, savedTokenId: settings.session ? settings.tokenId : null });
   if (owned !== null && settings.tokenId && decideOwnership(settings.tokenId, owned) === 'lost') {
     wipeDiary(userData);
     wipeChatLog(userData);
@@ -304,7 +305,7 @@ async function start() {
   }
   tokenId = choice.tokenId;
   judge = choice.judge;
-  settings.tokenId = tokenId;
+  if (!process.env.CHOG_TOKEN_ID) settings.tokenId = tokenId; // the env override is a dev switch, never persisted
   saveSettings(userData, settings);
 
   let imageBytes: Uint8Array;
@@ -437,16 +438,29 @@ async function start() {
       rollDay(new Date()); // rolls the day even while the owner is idle and the poll loop is paused
       const token = currentToken();
       const api = createApi({ baseUrl: base, token });
+      const expireSession = async () => {
+        settings.session = null;
+        saveSettings(userData, settings);
+        await dialog.showMessageBox({ message: 'Your sign-in expired. Chog Buddy will restart so you can sign in again.' });
+        relaunch();
+      };
       // Yesterday's final totals go up on the first tick after midnight, not at the next hourly slot.
       if (settings.yesterday || uploadDue(settings.lastUpload, Date.now())) {
         const jobs = uploadsFor({ judge, signedIn: !!token, tokenId, today: settings.today, yesterday: settings.yesterday });
         try {
           for (const j of jobs) await api.uploadActivity(j);
           if (jobs.length) { settings.lastUpload = Date.now(); settings.yesterday = null; } // only once every job succeeded
-        } catch { /* retry next tick */ }
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 401) { await expireSession(); return; }
+          if (e instanceof ApiError && e.status === 400) settings.yesterday = null; // too old for the backend, it can never be sent
+          else if (e instanceof ApiError && e.status === 403) settings.lastOwnershipCheck = 0; // re-check ownership now
+          // anything else: retry next tick
+        }
       }
       if (token && ownershipCheckDue(settings.lastOwnershipCheck, Date.now())) {
-        const owned = await api.myChogs().catch(() => null);
+        let expired = false;
+        const owned = await api.myChogs().catch((e) => { expired = e instanceof ApiError && e.status === 401; return null; });
+        if (expired) { await expireSession(); return; }
         if (owned !== null) settings.lastOwnershipCheck = Date.now();
         if (decideOwnership(tokenId, owned) === 'lost') {
           wipeDiary(userData);
