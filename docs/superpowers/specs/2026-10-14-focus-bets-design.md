@@ -65,7 +65,7 @@ Status: `Open`, `Won`, `Lost`, `Claimed`, `Refunded`.
 
 Functions:
 - `stakeWithPermit(goal, amount, deadline, progressKeyHash, permitDeadline, v, r, s) returns (betId)`: the permit and the transfer happen in one transaction (one transaction, two wallet prompts: sign permit, send tx). `stake(...)` without permit is also provided for wallets that already approved.
-- `settle(betId, won)`: settler only, bet must be `Open`. A win can be settled any time before the deadline. A loss only after the deadline.
+- `settle(betId, won)`: settler only, bet must be `Open`. A win can be settled while the bet is open, including a late report inside the grace period. A loss only after the deadline.
 - `claim(betId)`: bettor only, bet must be `Won`. Pays stake + bonus.
 - `refund(betId)`: bettor only, bet `Open` and `block.timestamp > deadline + 2 days`. Returns the stake.
 - `fund(amount)`: anyone adds to the pot.
