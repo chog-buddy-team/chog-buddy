@@ -1,7 +1,7 @@
 export type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
 export type ChatProvider = {
-  id: 'ollama' | 'gemini';
+  id: 'server' | 'ollama' | 'gemini';
   available(): Promise<boolean>;
   stream(system: string, history: ChatMessage[], onToken: (t: string) => void): Promise<string>;
 };

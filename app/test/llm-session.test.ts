@@ -44,6 +44,11 @@ describe('pickProvider', () => {
     expect((await pickProvider('gemini', [fake('ollama', true), fake('gemini', true)]))?.id).toBe('gemini');
     expect(await pickProvider('gemini', [fake('ollama', true), fake('gemini', false)])).toBeNull();
   });
+  it('auto prefers the Chog server when it is available', async () => {
+    expect((await pickProvider('auto', [fake('server', true), fake('ollama', true), fake('gemini', true)]))?.id).toBe('server');
+    expect((await pickProvider('auto', [fake('server', false), fake('ollama', true)]))?.id).toBe('ollama');
+    expect((await pickProvider('server', [fake('server', true), fake('ollama', true)]))?.id).toBe('server');
+  });
 });
 
 describe('ChatSession', () => {
