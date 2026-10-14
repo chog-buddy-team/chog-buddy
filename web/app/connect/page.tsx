@@ -12,6 +12,7 @@ declare global {
 const noSubscribe = () => () => {};
 const clientSearch = () => window.location.search;
 const serverSearch = () => null;
+const offline = (): never => { throw new Error('Could not reach Chog Buddy. Check your internet and try again.'); };
 
 export default function Connect() {
   const [status, setStatus] = useState('Connect the wallet that holds your Chog.');
@@ -31,7 +32,7 @@ export default function Connect() {
       const [raw] = await wallet.requestAddresses();
       const address = getAddress(raw);
       setStatus('Sign the message in your wallet…');
-      const nonceRes = await fetch('/api/auth/nonce', { method: 'POST' });
+      const nonceRes = await fetch('/api/auth/nonce', { method: 'POST' }).catch(offline);
       const { nonce, error } = await nonceRes.json().catch(() => ({}));
       if (!nonceRes.ok || typeof nonce !== 'string') throw new Error(typeof error === 'string' ? error : 'Could not start sign-in. Try again in a minute.');
       const message = createSiweMessage({
@@ -39,7 +40,7 @@ export default function Connect() {
         statement: 'Sign in to Chog Buddy. This does not cost gas.',
       });
       const signature = await wallet.signMessage({ account: address, message });
-      const r = await fetch('/api/auth/verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message, signature }) });
+      const r = await fetch('/api/auth/verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message, signature }) }).catch(offline);
       if (!r.ok) throw new Error('Sign-in was rejected. Try again.');
       const { token } = await r.json();
       const cb = await fetch(`http://127.0.0.1:${port}/callback`, {
