@@ -38,6 +38,11 @@ export function loadSettings(dir: string): Settings {
 
 export function saveSettings(dir: string, s: Settings): void {
   const file = join(dir, 'settings.json');
-  writeFileSync(`${file}.tmp`, JSON.stringify(s, null, 2));
-  renameSync(`${file}.tmp`, file); // atomic replace: a crash mid-write leaves the previous settings.json intact
+  const json = JSON.stringify(s, null, 2);
+  writeFileSync(`${file}.tmp`, json, { flush: true });
+  try {
+    renameSync(`${file}.tmp`, file); // atomic replace: a crash mid-write leaves the previous settings.json intact
+  } catch {
+    writeFileSync(file, json); // Windows: another process may block the rename (EPERM/EBUSY); a plain write still saves
+  }
 }

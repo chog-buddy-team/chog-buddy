@@ -24,6 +24,13 @@ describe('upload timing', () => {
     expect(uploadsFor({ judge: false, signedIn: false, tokenId: 5, today: day('a'), yesterday: null })).toEqual([]);
   });
   it('flushes yesterday first, then today', () => {
-    expect(uploadsFor({ judge: false, signedIn: true, tokenId: 9, today: day('d2'), yesterday: day('d1') }).map((u) => u.day)).toEqual(['d1', 'd2']);
+    const today = day('d2'), yesterday = day('d1');
+    expect(uploadsFor({ judge: false, signedIn: true, tokenId: 9, today, yesterday })).toEqual([
+      { tokenId: 9, day: 'd1', totals: yesterday.totals },
+      { tokenId: 9, day: 'd2', totals: today.totals },
+    ]);
+  });
+  it('uploads only today when there is no yesterday', () => {
+    expect(uploadsFor({ judge: false, signedIn: true, tokenId: 9, today: day('d2'), yesterday: null }).map((u) => u.day)).toEqual(['d2']);
   });
 });

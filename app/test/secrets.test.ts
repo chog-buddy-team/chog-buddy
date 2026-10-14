@@ -9,7 +9,11 @@ const rot: Cipher = {
 
 describe('seal/unseal', () => {
   it('round-trips', () => expect(unseal(rot, seal(rot, 'secret'))).toBe('secret'));
-  it('returns null when encryption is unavailable', () => expect(seal({ ...rot, available: () => false }, 'x')).toBeNull());
+  it('returns null when encryption is unavailable', () => {
+    expect(seal({ ...rot, available: () => false }, 'x')).toBeNull();
+    expect(unseal({ ...rot, available: () => false }, seal(rot, 'x'))).toBeNull();
+  });
+  it('returns null when encryption throws', () => expect(seal({ ...rot, encrypt: () => { throw new Error('denied'); } }, 'x')).toBeNull());
   it('returns null for missing or corrupt input instead of throwing', () => {
     expect(unseal(rot, null)).toBeNull();
     expect(unseal({ ...rot, decrypt: () => { throw new Error('bad'); } }, 'AAAA')).toBeNull();

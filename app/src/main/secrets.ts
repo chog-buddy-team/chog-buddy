@@ -2,7 +2,11 @@ export type Cipher = { available(): boolean; encrypt(s: string): Buffer; decrypt
 
 export function seal(c: Cipher, plain: string): string | null {
   if (!c.available()) return null;
-  return c.encrypt(plain).toString('base64');
+  try {
+    return c.encrypt(plain).toString('base64');
+  } catch {
+    return null; // e.g. Keychain access denied after isEncryptionAvailable() said yes
+  }
 }
 
 export function unseal(c: Cipher, sealed: string | null): string | null {
