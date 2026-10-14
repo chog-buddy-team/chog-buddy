@@ -22,7 +22,7 @@ describe('drawChogFrame', () => {
     expect(filled(f)).toBeGreaterThan(600);
   });
   it('shows the canonical face and hood colours on the head', () => {
-    const f = drawChogFrame(parts(), REST);
+    const f = drawChogFrame(parts('tee', 'none'), REST); // classic's suit shares the hood colour, so use a tee
     expect(count(f, CANON.face)).toBeGreaterThan(100);
     expect(count(f, CANON.hood)).toBeGreaterThan(200);
   });

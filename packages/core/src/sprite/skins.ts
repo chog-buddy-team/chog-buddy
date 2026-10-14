@@ -1,8 +1,8 @@
-import { hex } from './pixels';
+import { hex, type Rgba } from './pixels';
 import type { Trait } from '../types';
 import type { ChogPalette } from './palette';
 import { hatStyle, outfitStyle, type HatStyle, type OutfitStyle } from './traits';
-import type { Outfit, SkinColors } from './canon';
+import { CANON, type Outfit, type SkinColors } from './canon';
 
 export type Skin = { outfit: Outfit; hat: HatStyle; colors: SkinColors };
 export type SkinId = 'classic' | 'hoodie' | 'jacket' | 'dress' | 'nft';
@@ -28,9 +28,16 @@ export function outfitFor(style: OutfitStyle): Outfit {
   }
 }
 
+// A hat sampled close to the hood purple would vanish into the hood, so it falls back to the default hat colours.
+const nearHood = (c: Rgba) => Math.hypot(c[0] - CANON.hood[0], c[1] - CANON.hood[1], c[2] - CANON.hood[2]) < 55;
+
 export function nftSkin(attributes: Trait[], palette: ChogPalette | null): Skin {
+  const hatOk = palette !== null && !nearHood(palette.hat);
   const colors: SkinColors = palette
-    ? { outfit: palette.outfit, outfitShade: palette.outfitShade, pants: palette.shoes, hat: palette.hat, hatShade: palette.hatShade }
+    ? {
+        outfit: palette.outfit, outfitShade: palette.outfitShade, pants: palette.shoes,
+        hat: hatOk ? palette.hat : DEFAULT_COLORS.hat, hatShade: hatOk ? palette.hatShade : DEFAULT_COLORS.hatShade,
+      }
     : DEFAULT_COLORS;
   return { outfit: outfitFor(outfitStyle(attributes)), hat: hatStyle(attributes), colors };
 }

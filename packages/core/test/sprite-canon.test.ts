@@ -46,12 +46,15 @@ describe('drawCanonHead', () => {
     expect(s).not.toEqual(h);
     expect(t).not.toEqual(o);
   });
-  it('every expression keeps eyes inside the cream face (no eye pixel touches hood)', () => {
+  it('every expression keeps eyes inside the cream face (no eye pixel touches hood or blush)', () => {
     for (const e of ['open', 'closed', 'happy', 'talk', 'sad'] as Expr[]) {
       const b = head(e);
       for (let y = 0; y < 52; y++) for (let x = 0; x < 48; x++) {
         if (!same(b.get(x, y), CANON.eye)) continue;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) expect(same(b.get(x + dx, y + dy), CANON.hood)).toBe(false);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const n = b.get(x + dx, y + dy);
+          expect(same(n, CANON.hood) || same(n, CANON.blush)).toBe(false);
+        }
       }
     }
   });

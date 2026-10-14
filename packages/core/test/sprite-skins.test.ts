@@ -29,6 +29,12 @@ describe('skins', () => {
     expect(s.colors.outfit).toEqual(palette.outfit);
     expect(s.colors.hat).toEqual(palette.hat);
   });
+  it('nft hat close to the hood purple falls back to the default hat colours', () => {
+    const s = nftSkin(t({ Head: 'MMGA Cap' }), { ...palette, hat: hex('#7a4de0'), hatShade: hex('#5a2dc0') });
+    expect(s.colors.hat).toEqual(PRESET_SKINS.classic.colors.hat);
+    expect(s.colors.hatShade).toEqual(PRESET_SKINS.classic.colors.hatShade);
+    expect(s.colors.outfit).toEqual(palette.outfit);
+  });
   it('nft skin without a palette still returns a complete skin', () => {
     const s = nftSkin(t({ Head: 'Wizard Hat' }), null);
     expect(s.outfit).toBe('classic');
