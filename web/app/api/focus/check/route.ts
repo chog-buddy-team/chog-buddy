@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     } catch {
       // Settled in parallel; the fresh read below shows the result.
     }
-    return Response.json({ status: (await readBet(betId)).status, minutes: minutes ?? 0, deadline: bet.deadline });
+    return Response.json({ status: (await readBet(betId)).status, minutes: minutes ?? 0, deadline: bet.deadline, goal: bet.goal });
   }
-  return Response.json({ status: bet.status, minutes: minutes ?? 0, deadline: bet.deadline });
+  return Response.json({ status: bet.status, minutes: minutes ?? 0, deadline: bet.deadline, goal: bet.goal });
 }
