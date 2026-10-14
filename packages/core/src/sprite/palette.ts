@@ -59,28 +59,3 @@ export function samplePalette(nft: PixelBuffer, side: Side): ChogPalette {
   const spike = modeColor(nft, forSide(R.spike, side), [bg, skin, hat], false) ?? hex('#2a2a2a');
   return { skin, spike, hat, hatShade: shade(hat, 0.7), outfit, outfitShade: shade(outfit, 0.7), shoes: shade(outfit, 0.35), ink: INK };
 }
-
-/** Popularity quantizer: keep the `maxColors` most common 4-bit buckets, map every pixel to the nearest. */
-export function quantize(buf: PixelBuffer, maxColors: number): PixelBuffer {
-  const buckets = new Map<string, { n: number; s: [number, number, number] }>();
-  for (let y = 0; y < buf.height; y++)
-    for (let x = 0; x < buf.width; x++) {
-      const c = buf.get(x, y);
-      if (c[3] === 0) continue;
-      addToBucket(buckets, c);
-    }
-  const pal: Rgba[] = [...buckets.values()]
-    .sort((a, b) => b.n - a.n)
-    .slice(0, maxColors)
-    .map((e) => bucketAverage(e));
-  const out = new PixelBuffer(buf.width, buf.height);
-  for (let y = 0; y < buf.height; y++)
-    for (let x = 0; x < buf.width; x++) {
-      const c = buf.get(x, y);
-      if (c[3] === 0) continue;
-      let best = pal[0];
-      for (const p of pal) if (dist(p, c) < dist(best, c)) best = p;
-      out.set(x, y, best);
-    }
-  return out;
-}

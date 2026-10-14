@@ -1,4 +1,4 @@
-import { ATLAS_ROWS, FRAME_H, FRAME_W, PixelBuffer, buildAtlas, extractFace, frameAt, hatStyle, outfitStyle, samplePalette, type AnimName } from '../../../packages/core/src/sprite'; // sprite-only: keeps viem out of the renderer bundle
+import { ATLAS_ROWS, FRAME_H, FRAME_W, PRESET_SKINS, PixelBuffer, buildAtlas, frameAt, type AnimName } from '../../../packages/core/src/sprite'; // sprite-only: keeps viem out of the renderer bundle
 import type { ChogApi, InitPayload } from '../preload';
 
 declare global {
@@ -26,12 +26,7 @@ async function decode(bytes: Uint8Array): Promise<PixelBuffer> {
 
 async function build(p: InitPayload) {
   const nft = await decode(p.imageBytes);
-  const atlasBuf = buildAtlas({
-    palette: samplePalette(nft, p.side),
-    face: extractFace(nft, p.side),
-    outfit: outfitStyle(p.attributes),
-    hat: hatStyle(p.attributes),
-  });
+  const atlasBuf = buildAtlas(PRESET_SKINS.classic);
   const c = document.createElement('canvas');
   c.width = atlasBuf.width;
   c.height = atlasBuf.height;

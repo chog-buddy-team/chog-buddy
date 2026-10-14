@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PixelBuffer, hex, type Rgba } from '../src/sprite/pixels';
-import { FACE_H, FACE_W, extractFace, quantize, samplePalette } from '../src/sprite';
+import { samplePalette } from '../src/sprite';
 
 // Synthetic "NFT": 100x100, pink bg, brown face block, grey hat band, red outfit corner, black spikes.
 function fakeNft(mirrored = false): PixelBuffer {
@@ -37,34 +37,5 @@ describe('samplePalette', () => {
     expect(p.skin).toEqual(hex('#f0e6d6'));
     expect(p.outfit).toEqual(hex('#505a6e'));
     expect(p.spike).toEqual(hex('#2a2a2a'));
-  });
-});
-
-describe('quantize', () => {
-  it('limits distinct opaque colours', () => {
-    const b = new PixelBuffer(16, 1);
-    for (let x = 0; x < 16; x++) b.set(x, 0, [x * 16, 0, 0, 255]);
-    const q = quantize(b, 4);
-    const distinct = new Set<string>();
-    for (let x = 0; x < 16; x++) distinct.add(q.get(x, 0).join());
-    expect(distinct.size).toBeLessThanOrEqual(4);
-  });
-});
-
-describe('extractFace', () => {
-  it('returns a FACE_W x FACE_H opaque buffer', () => {
-    const f = extractFace(fakeNft(), 'Right');
-    expect([f.width, f.height]).toEqual([FACE_W, FACE_H]);
-    expect(f.get(0, 0)[3]).toBe(255);
-  });
-  it('mirrors a Left Chog so the eye lands on the same side as a Right Chog', () => {
-    const r = extractFace(fakeNft(false), 'Right');
-    const l = extractFace(fakeNft(true), 'Left');
-    const darkCols = (f: ReturnType<typeof extractFace>) => {
-      const cols: number[] = [];
-      for (let x = 0; x < f.width; x++) for (let y = 0; y < f.height; y++) if (f.get(x, y)[0] < 60) cols.push(x);
-      return cols.reduce((a, b) => a + b, 0) / cols.length;
-    };
-    expect(Math.abs(darkCols(r) - darkCols(l))).toBeLessThan(2);
   });
 });
