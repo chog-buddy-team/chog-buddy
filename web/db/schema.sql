@@ -50,3 +50,16 @@ create table if not exists chat_usage (
   count int not null,
   primary key (key, day)
 );
+
+-- Focus Bets: latest focus minutes the Pet reported per bet (bet details live onchain).
+create table if not exists focus_progress (
+  bet_id bigint primary key,
+  minutes int not null,
+  reported_at timestamptz not null default now()
+);
+
+-- Daily sweep cursor: lowest bet id that was still open last run.
+create table if not exists focus_cursor (
+  id int primary key default 1,
+  next_open bigint not null
+);
