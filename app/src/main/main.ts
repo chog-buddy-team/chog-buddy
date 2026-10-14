@@ -65,6 +65,16 @@ let starts: number[] = [];
 const warned = new Set<number>();
 let diaryBusy: Promise<DiaryEntry> | null = null;
 let historyWin: BrowserWindow | null = null;
+let startedJudge = false; // the previous run was Judge Mode: its token was never owned, so nothing to wipe
+
+// The previously active token is no longer owned: its diary and chat history must not outlive it.
+function checkLost(owned: number[]): boolean {
+  if (startedJudge || decideOwnership(settings.tokenId, owned) !== 'lost') return false;
+  const userData = app.getPath('userData');
+  wipeDiary(userData);
+  wipeChatLog(userData);
+  return true;
+}
 
 const cipher: Cipher = {
   available: () => safeStorage.isEncryptionAvailable(),
@@ -199,7 +209,7 @@ function openHistory() {
     historyWin.focus();
     return;
   }
-  const w = new BrowserWindow({ width: 380, height: 520, title: 'Chog chat history', webPreferences: { preload: path.join(__dirname, 'preload.cjs') } });
+  const w = new BrowserWindow({ width: 380, height: 520, title: 'Chog chat history', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs') } });
   historyWin = w;
   w.webContents.on('will-navigate', (e) => e.preventDefault());
   w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -252,12 +262,18 @@ function groundY(area: Electron.Rectangle) {
 
 // Drives the native startup dialogs. Returns the Chog to show, or null to quit.
 async function resolveChoice(choice: Startup, base: string): Promise<{ tokenId: number; judge: boolean } | null> {
+  if (process.platform === 'darwin') app.focus({ steal: true });
   for (;;) {
     if (choice.kind === 'pet') return { tokenId: choice.tokenId, judge: choice.judge };
     if (choice.kind === 'pick') {
       const ids = choice.tokenIds.slice(0, 8);
-      const r = await dialog.showMessageBox({ message: 'Which Chog should live on your desktop?', buttons: ids.map((id) => `Chog #${id}`), cancelId: -1 });
-      if (r.response < 0) return null;
+      const r = await dialog.showMessageBox({
+        message: 'Which Chog should live on your desktop?',
+        ...(choice.tokenIds.length > 8 ? { detail: 'Showing your first 8 Chogs.' } : {}),
+        buttons: [...ids.map((id) => `Chog #${id}`), 'Quit'],
+        cancelId: ids.length,
+      });
+      if (r.response >= ids.length) return null;
       return { tokenId: ids[r.response], judge: false };
     }
     const intro = choice.kind === 'no-chog' ? 'This wallet holds no Chog Genesis NFT.' : 'Chog Buddy needs a Chog Genesis NFT.';
@@ -275,6 +291,7 @@ async function resolveChoice(choice: Startup, base: string): Promise<{ tokenId: 
       settings.session = { tokenEnc, address: s.address };
       settings.judgeMode = false;
       const owned = await createApi({ baseUrl: base, token: s.token }).myChogs().catch(() => null);
+      if (owned) checkLost(owned);
       choice = owned === null ? { kind: 'choose' } : chooseStartup({ judgeMode: false, signedIn: true, owned, savedTokenId: null });
     } catch (e) {
       await dialog.showMessageBox({ type: 'warning', message: `Sign-in failed: ${(e as Error).message}` });
@@ -286,6 +303,7 @@ async function resolveChoice(choice: Startup, base: string): Promise<{ tokenId: 
 async function start() {
   const userData = app.getPath('userData');
   settings = loadSettings(userData);
+  startedJudge = settings.judgeMode; // before resolveChoice mutates it
   const base = apiUrl();
   const sessionToken = settings.session ? unseal(cipher, settings.session.tokenEnc) : null;
   // Judge Mode never asks the server about ownership.
@@ -293,9 +311,7 @@ async function start() {
   if (owned !== null) settings.lastOwnershipCheck = Date.now();
   const envTokenId = process.env.CHOG_TOKEN_ID ? Number(process.env.CHOG_TOKEN_ID) : undefined;
   const startup = chooseStartup({ envTokenId, judgeMode: settings.judgeMode, signedIn: !!sessionToken && !!settings.session, owned, savedTokenId: settings.session ? settings.tokenId : null });
-  if (owned !== null && settings.tokenId && decideOwnership(settings.tokenId, owned) === 'lost') {
-    wipeDiary(userData);
-    wipeChatLog(userData);
+  if (owned !== null && settings.tokenId && checkLost(owned)) {
     await dialog.showMessageBox({ message: `Chog #${settings.tokenId} is no longer in your wallet, so its diary and chat history were cleared. Its Soul stays with the Chog.` });
   }
   const choice = await resolveChoice(startup, base);
@@ -432,7 +448,7 @@ async function start() {
     }
   }, POLL_MS);
 
-  if (!judge) {
+  if (!judge && !process.env.CHOG_TOKEN_ID) {
     // Upload + rollover + ownership re-check, every 10 min tick; each job has its own due rule.
     setInterval(async () => {
       rollDay(new Date()); // rolls the day even while the owner is idle and the poll loop is paused
@@ -462,9 +478,7 @@ async function start() {
         const owned = await api.myChogs().catch((e) => { expired = e instanceof ApiError && e.status === 401; return null; });
         if (expired) { await expireSession(); return; }
         if (owned !== null) settings.lastOwnershipCheck = Date.now();
-        if (decideOwnership(tokenId, owned) === 'lost') {
-          wipeDiary(userData);
-          wipeChatLog(userData);
+        if (owned && checkLost(owned)) {
           settings.session = null;
           saveSettings(userData, settings);
           await dialog.showMessageBox({ message: `Chog #${tokenId} left your wallet. Its diary and chat history were cleared. Restart Chog Buddy to choose again.` });
@@ -495,7 +509,7 @@ async function start() {
         { label: `${meta.name} · ${ARCHETYPES[archetype].name}${judge ? ' · Judge Mode (demo Chog)' : ''}`, enabled: false },
         {
           label: 'Skin',
-          submenu: SKIN_IDS.map((id) => ({
+          submenu: SKIN_IDS.filter((id) => !(judge && id === 'nft')).map((id) => ({
             label: { classic: 'Classic Chog', hoodie: 'Hoodie', jacket: 'Jacket', dress: 'Dress', nft: "My NFT skin (your Chog's traits)" }[id],
             type: 'radio' as const,
             checked: settings.skin === id,
@@ -536,7 +550,7 @@ async function start() {
                     checked: m === settings.chat.ollamaModel || m.startsWith(`${settings.chat.ollamaModel}:`),
                     click: () => { settings.chat.ollamaModel = m; saveSettings(app.getPath('userData'), settings); },
                   }))
-                : [{ label: 'brew install ollama && ollama pull llama3.2', enabled: false }],
+                : [{ label: 'Install Ollama from ollama.com, then run: ollama pull llama3.2', enabled: false }],
             },
             { label: settings.chat.geminiKeyEnc ? 'Replace Gemini key…' : 'Set Gemini key…', click: () => openChat('key') },
             {
@@ -621,19 +635,20 @@ async function start() {
   refreshOllamaModels();
 }
 
-ipcMain.on('drag-start', () => {
-  if (!win) return;
+ipcMain.on('drag-start', (e) => {
+  if (!win || e.sender !== win.webContents) return;
   dragging = true;
   const p = screen.getCursorScreenPoint();
   const [x, y] = win.getPosition();
   dragOffset = { x: p.x - x, y: p.y - y };
 });
-ipcMain.on('drag-move', (_e, p: { x: number; y: number }) => {
+ipcMain.on('drag-move', (e, p: { x: number; y: number }) => {
+  if (e.sender !== win?.webContents) return;
   if (!Number.isFinite(p?.x) || !Number.isFinite(p?.y)) return;
   win?.setPosition(Math.round(p.x - dragOffset.x), Math.round(p.y - dragOffset.y));
 });
-ipcMain.on('drag-end', () => {
-  if (!win) return;
+ipcMain.on('drag-end', (e) => {
+  if (!win || e.sender !== win.webContents) return;
   const [x, y] = win.getPosition();
   const a = workAreaFor(x, y);
   walk = { ...walk, x: clampX(x, a.x, a.x + a.width - W) };
@@ -641,12 +656,13 @@ ipcMain.on('drag-end', () => {
   dragging = false;
 });
 
-ipcMain.on('pet-click', () => {
+ipcMain.on('pet-click', (e) => {
+  if (e.sender !== win?.webContents) return;
   reactUntil = Date.now() + REACT_MS;
   openChat('chat');
 });
-ipcMain.on('chat-send', async (_e, text: unknown) => {
-  if (!chat || typeof text !== 'string' || inFlightChat) return;
+ipcMain.on('chat-send', async (e, text: unknown) => {
+  if (e.sender !== win?.webContents || !chat || typeof text !== 'string' || inFlightChat) return;
   inFlightChat = true;
   try {
     talkUntil = Date.now() + 60_000;
@@ -672,7 +688,8 @@ ipcMain.on('chat-send', async (_e, text: unknown) => {
   }
 });
 ipcMain.on('chat-close', () => closeChat());
-ipcMain.on('key-submit', (_e, key: unknown) => {
+ipcMain.on('key-submit', (e, key: unknown) => {
+  if (e.sender !== win?.webContents) return;
   const mode = secretMode; // routed by the mode main opened, never by the renderer
   if (typeof key !== 'string' || mode === 'chat') return;
   const k = key.trim();
@@ -702,15 +719,18 @@ ipcMain.on('key-submit', (_e, key: unknown) => {
   saveSettings(app.getPath('userData'), settings);
   rebuildMenu?.();
 });
-ipcMain.on('atlas-ready', (_e, png: Uint8Array) => {
-  if (!(png instanceof Uint8Array) || png.byteLength > 20_000_000) return;
+ipcMain.on('atlas-ready', (e, png: Uint8Array) => {
+  if (e.sender !== win?.webContents || !(png instanceof Uint8Array) || png.byteLength > 20_000_000) return;
   atlasPng = Buffer.from(png);
   rebuildMenu?.();
   if (process.env.CHOG_DUMP_ATLAS) writeFileSync(path.join(app.getPath('userData'), 'atlas.png'), atlasPng);
 });
-ipcMain.on('atlas-error', (_e, message: string) => {
+ipcMain.on('atlas-error', (e, message: string) => {
+  if (e.sender !== win?.webContents) return;
   dialog.showErrorBox('Chog Buddy', `Could not draw your Chog.\n\n${String(message).slice(0, 500)}`);
   if (atlasPng) return; // a failed skin switch keeps the Chog that is already on screen
+  settings.skin = 'classic'; // never repeat a skin that failed to render on the next launch
+  saveSettings(app.getPath('userData'), settings);
   app.quit();
 });
 
