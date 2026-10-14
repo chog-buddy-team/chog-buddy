@@ -1,5 +1,5 @@
 import { ATLAS_ROWS, FRAME_H, FRAME_W, PixelBuffer, buildAtlas, extractFace, frameAt, hatStyle, outfitStyle, samplePalette, type AnimName } from '../../../packages/core/src/sprite'; // sprite-only: keeps viem out of the renderer bundle
-import type { ChogApi, InitPayload } from '../preload';
+import type { ChatMode, ChogApi, InitPayload } from '../preload';
 
 declare global {
   interface Window { chog: ChogApi }
@@ -90,14 +90,20 @@ window.chog.onSay((text) => {
 
 const chatForm = document.getElementById('chat') as HTMLFormElement;
 const chatInput = document.getElementById('chat-input') as HTMLInputElement;
-let chatMode: 'chat' | 'key' = 'chat';
+let chatMode: ChatMode = 'chat';
+const PLACEHOLDER: Record<ChatMode, string> = {
+  chat: 'Talk to your Chog… (Esc to close)',
+  key: 'Paste your Gemini API key, then Enter',
+  github: 'Paste your GitHub token, then Enter',
+  ical: 'Paste your secret iCal URL, then Enter',
+};
 
 window.chog.onChatOpen(({ mode }) => {
   chatMode = mode;
   document.body.classList.add('chatting');
   chatForm.hidden = false;
-  chatInput.type = mode === 'key' ? 'password' : 'text';
-  chatInput.placeholder = mode === 'key' ? 'Paste your Gemini API key, then Enter' : 'Talk to your Chog… (Esc to close)';
+  chatInput.type = mode === 'chat' ? 'text' : 'password';
+  chatInput.placeholder = PLACEHOLDER[mode];
   chatInput.value = '';
   chatInput.focus();
 });
@@ -109,7 +115,7 @@ chatForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const v = chatInput.value;
   chatInput.value = '';
-  if (chatMode === 'key') {
+  if (chatMode !== 'chat') {
     window.chog.keySubmit(v);
     return;
   }
