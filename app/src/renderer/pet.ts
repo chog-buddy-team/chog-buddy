@@ -1,5 +1,5 @@
-import { ATLAS_ROWS, FRAME_H, FRAME_W, PixelBuffer, buildAtlas, extractFace, frameAt, hatStyle, outfitStyle, samplePalette, type AnimName } from '../../../packages/core/src/sprite'; // sprite-only: keeps viem out of the renderer bundle
-import type { ChogApi, InitPayload } from '../preload';
+import { ATLAS_ROWS, FRAME_H, FRAME_W, PixelBuffer, buildAtlas, frameAt, samplePalette, skinFor, type AnimName, type SkinId } from '../../../packages/core/src/sprite'; // sprite-only: keeps viem out of the renderer bundle
+import type { ChatMode, ChogApi, InitPayload } from '../preload';
 
 declare global {
   interface Window { chog: ChogApi }
@@ -9,6 +9,9 @@ const pet = document.getElementById('pet') as HTMLCanvasElement;
 const ctx = pet.getContext('2d')!;
 const bubble = document.getElementById('bubble') as HTMLDivElement;
 let atlas: HTMLCanvasElement | null = null;
+let init: InitPayload | null = null;
+let nftPixels: Promise<PixelBuffer | null> | null = null; // the NFT image, decoded on first use by the nft skin
+let rebuilds = 0; // only the newest rebuild may swap the atlas and send the PNG
 let anim: AnimName = 'idle';
 let animStart = performance.now();
 let paused = false;
@@ -24,26 +27,38 @@ async function decode(bytes: Uint8Array): Promise<PixelBuffer> {
   return new PixelBuffer(d.width, d.height, d.data);
 }
 
-async function build(p: InitPayload) {
-  const nft = await decode(p.imageBytes);
-  const atlasBuf = buildAtlas({
-    palette: samplePalette(nft, p.side),
-    face: extractFace(nft, p.side),
-    outfit: outfitStyle(p.attributes),
-    hat: hatStyle(p.attributes),
-  });
+async function rebuild(id: SkinId) {
+  const p = init;
+  if (!p) return;
+  const mine = ++rebuilds;
+  // Only the nft skin reads the image; a failed decode falls back to the default colours.
+  const nft = id === 'nft' ? await (nftPixels ??= decode(p.imageBytes).catch((e) => { console.warn('Chog Buddy: NFT image decode failed, using default colours', e); return null; })) : null;
+  if (mine !== rebuilds) return;
+  const atlasBuf = buildAtlas(skinFor(id, { attributes: p.attributes, palette: nft ? samplePalette(nft, p.side) : null }));
   const c = document.createElement('canvas');
   c.width = atlasBuf.width;
   c.height = atlasBuf.height;
   c.getContext('2d')!.putImageData(new ImageData(atlasBuf.data as ImageDataArray, atlasBuf.width, atlasBuf.height), 0, 0);
   atlas = c;
-  pet.title = p.name;
+  if (paused) drawFrame(0); // the draw loop is idle while paused, so show the new skin now
   const blob = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/png'));
-  if (blob) window.chog.atlasReady(new Uint8Array(await blob.arrayBuffer()));
+  const png = blob && new Uint8Array(await blob.arrayBuffer());
+  if (png && mine === rebuilds) window.chog.atlasReady(png);
+}
+
+async function build(p: InitPayload) {
+  init = p;
+  nftPixels = null;
+  pet.title = p.name;
+  await rebuild(p.skin);
 }
 
 window.chog.onInit((p) => {
   build(p).catch((e) => window.chog.atlasError(String(e)));
+});
+
+window.chog.onSetSkin((id) => {
+  rebuild(id).catch((e) => window.chog.atlasError(String(e)));
 });
 
 window.chog.onAnim((a) => {
@@ -90,14 +105,20 @@ window.chog.onSay((text) => {
 
 const chatForm = document.getElementById('chat') as HTMLFormElement;
 const chatInput = document.getElementById('chat-input') as HTMLInputElement;
-let chatMode: 'chat' | 'key' = 'chat';
+let chatMode: ChatMode = 'chat';
+const PLACEHOLDER: Record<ChatMode, string> = {
+  chat: 'Talk to your Chog… (Esc to close)',
+  key: 'Paste your Gemini API key, then Enter',
+  github: 'Paste your GitHub token, then Enter',
+  ical: 'Paste your secret iCal URL, then Enter',
+};
 
 window.chog.onChatOpen(({ mode }) => {
   chatMode = mode;
   document.body.classList.add('chatting');
   chatForm.hidden = false;
-  chatInput.type = mode === 'key' ? 'password' : 'text';
-  chatInput.placeholder = mode === 'key' ? 'Paste your Gemini API key, then Enter' : 'Talk to your Chog… (Esc to close)';
+  chatInput.type = mode === 'chat' ? 'text' : 'password';
+  chatInput.placeholder = PLACEHOLDER[mode];
   chatInput.value = '';
   chatInput.focus();
 });
@@ -109,7 +130,7 @@ chatForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const v = chatInput.value;
   chatInput.value = '';
-  if (chatMode === 'key') {
+  if (chatMode !== 'chat') {
     window.chog.keySubmit(v);
     return;
   }

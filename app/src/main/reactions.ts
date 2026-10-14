@@ -1,7 +1,8 @@
 import type { ArchetypeId, Category } from '@chog/core';
 import { LINES } from './lines';
 
-export type Trigger = 'category_switch' | 'long_session' | 'idle_return' | 'late_night' | 'morning' | 'focus_violation' | 'pet';
+// 'github' and 'meeting_soon' are fired by main's pollers; detectTrigger never emits them.
+export type Trigger = 'category_switch' | 'long_session' | 'idle_return' | 'late_night' | 'morning' | 'focus_violation' | 'pet' | 'github' | 'meeting_soon';
 
 export type ReactionState = {
   category: Category;

@@ -1,18 +1,29 @@
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, safeStorage, screen, Tray } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, safeStorage, screen, shell, Tray } from 'electron';
 import path from 'node:path';
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { ARCHETYPES, categorize, fetchChogMetadata, ipfsToHttp, pickArchetype, type ArchetypeId, type ChogMetadata } from '@chog/core';
+import { ARCHETYPES, SKIN_IDS, categorize, fetchChogMetadata, ipfsToHttp, pickArchetype, type ArchetypeId, type ChogMetadata } from '@chog/core';
+import type { ChatMode } from '../preload';
 import { clampX, stepWalk, type WalkState } from './walker';
 import { loadSettings, saveSettings, type Settings } from './store';
 import { apiUrl } from './config';
-import { detectTrigger, initialState, pickLine, type ReactionState, type Trigger } from './reactions';
-import { addSample, dayKey, emptyTotals } from './tally';
+import { ApiError, createApi } from './api';
+import { seal, unseal, type Cipher } from './secrets';
+import { startSignIn } from './signin';
+import { chooseStartup, decideOwnership, JUDGE_TOKEN_ID, ownershipCheckDue, type Startup } from './startup';
+import { rollover, uploadDue, uploadsFor } from './upload';
+import { appendDiary, loadDiary, localDiaryPrompt, wipeDiary, writeDiary, type DiaryEntry } from './diary';
+import { appendChatLog, forToken, loadChatLog, wipeChatLog } from './chatlog';
+import { fetchGithubUnread, githubShouldFire } from './triggers/github';
+import { nextMeetingWithin, parseIcsStarts } from './triggers/ical';
+import { flavourLine, flavourPrompt } from './flavour';
+import { COOLDOWN_MS, detectTrigger, initialState, pickLine, type ReactionState, type Trigger } from './reactions';
+import { addSample, dayKey } from './tally';
 import { chooseAnimation, PAUSE_SEC, REACT_MS, TALK_MS } from './animState';
 import { createGemini } from './llm/gemini';
 import { createOllama } from './llm/ollama';
 import { buildSystemPrompt } from './llm/prompt';
 import { createServerChat } from './llm/server';
-import { ChatSession } from './llm/session';
+import { ChatSession, HISTORY_CAP, MAX_INPUT, pickProvider } from './llm/session';
 import { petdexFolderName, petdexManifest } from './petdex';
 
 const W = 192;
@@ -45,19 +56,42 @@ let chatOpen = false;
 let inFlightChat = false;
 let chat: ChatSession | null = null;
 let ollamaModels: string[] = [];
+let meta: ChogMetadata;
+let tokenId: number;
+let judge = false;
+let secretMode: ChatMode = 'chat';
+let lastUnread: number | null = null;
+let starts: number[] = [];
+const warned = new Set<number>();
+let diaryBusy: Promise<DiaryEntry> | null = null;
+let historyWin: BrowserWindow | null = null;
+let startedJudge = false; // the previous run was Judge Mode: its token was never owned, so nothing to wipe
 
-function geminiKey(): string | null {
-  const enc = settings.chat.geminiKeyEnc;
-  if (!enc || !safeStorage.isEncryptionAvailable()) return null;
-  try {
-    return safeStorage.decryptString(Buffer.from(enc, 'base64'));
-  } catch {
-    return null;
-  }
+// The previously active token is no longer owned: its diary and chat history must not outlive it.
+function checkLost(owned: number[]): boolean {
+  if (startedJudge || decideOwnership(settings.tokenId, owned) !== 'lost') return false;
+  const userData = app.getPath('userData');
+  wipeDiary(userData);
+  wipeChatLog(userData);
+  return true;
 }
 
-function openChat(mode: 'chat' | 'key') {
+const cipher: Cipher = {
+  available: () => safeStorage.isEncryptionAvailable(),
+  encrypt: (s) => safeStorage.encryptString(s),
+  decrypt: (b) => safeStorage.decryptString(b),
+};
+
+function geminiKey(): string | null {
+  return unseal(cipher, settings.chat.geminiKeyEnc);
+}
+
+// Null in Judge Mode or when signed out. The backend treats a bad token as none (per-IP caps), so chat never breaks.
+const currentToken = () => (judge || !settings.session ? null : unseal(cipher, settings.session.tokenEnc));
+
+function openChat(mode: ChatMode) {
   if (!win) return;
+  secretMode = mode;
   const b = win.getBounds();
   if (!chatOpen) win.setBounds({ x: b.x, y: b.y + b.height - CHAT_H, width: W, height: CHAT_H });
   chatOpen = true;
@@ -82,15 +116,107 @@ async function refreshOllamaModels() {
   rebuildMenu?.();
 }
 
-function say(trigger: Trigger) {
-  win?.webContents.send('say', pickLine(archetype, trigger, lastCategory));
+async function say(trigger: Trigger) {
+  const template = pickLine(archetype, trigger, lastCategory);
+  const line = await flavourLine({
+    template, rand: Math.random,
+    generate: async () => {
+      // Never the server provider: it ignores system prompts and spends the shared daily cap.
+      const p = await pickProvider(settings.chat.provider, [createOllama({ model: settings.chat.ollamaModel }), createGemini({ apiKey: geminiKey() })]);
+      if (!p) throw new Error('no provider');
+      return p.stream(flavourPrompt({ chogName: meta.name, archetype, trigger, category: lastCategory, template }), [{ role: 'user', content: 'React now.' }], () => {});
+    },
+  });
+  if (chatOpen || inFlightChat) return; // a chat opened while the line was generating: drop the line
+  win?.webContents.send('say', line);
   talkUntil = Date.now() + TALK_MS;
 }
 
 function poke() {
-  say('pet');
+  void say('pet').catch(() => {});
   reactUntil = Date.now() + REACT_MS;
   reactions = { ...reactions, lastSpokeAt: Date.now() };
+}
+
+// At the day change, today moves to yesterday instead of being dropped, so its final totals still upload.
+function rollDay(now: Date) {
+  const r = rollover(settings.today, dayKey(now));
+  if (r.yesterday) { settings.today = r.today; settings.yesterday = r.yesterday; }
+}
+
+// One write at a time: a second caller shares the write already in flight.
+function ensureDiary(): Promise<DiaryEntry> {
+  diaryBusy ??= (async () => {
+    const userData = app.getPath('userData');
+    const day = dayKey(new Date());
+    const saved = loadDiary(userData).find((e) => e.tokenId === tokenId && e.day === day);
+    if (saved) return saved;
+    const token = currentToken();
+    const r = await writeDiary({
+      remote: () => (judge || !token ? Promise.reject(new Error('judge/signed-out')) : createApi({ baseUrl: apiUrl(), token }).diary({ tokenId, totals: settings.today.totals })),
+      local: async () => {
+        const p = await pickProvider(settings.chat.provider, [createOllama({ model: settings.chat.ollamaModel }), createGemini({ apiKey: geminiKey() })]);
+        if (!p) throw new Error('no provider');
+        return p.stream(localDiaryPrompt({ chogName: meta.name, archetype, totals: settings.today.totals }), [{ role: 'user', content: "Write today's entry." }], () => {});
+      },
+      template: pickLine(archetype, 'idle_return', lastCategory),
+    });
+    const entry = { day, tokenId, text: r.text };
+    appendDiary(userData, entry);
+    return entry;
+  })().finally(() => { diaryBusy = null; });
+  return diaryBusy;
+}
+
+async function showDiary() {
+  const entry = await ensureDiary();
+  openChat('chat');
+  win?.webContents.send('chat-replace', `📔 ${entry.text}`); // replace, not append: the bubble may still hold an old line
+  win?.webContents.send('chat-done', { failed: false });
+}
+
+async function pollGithub() {
+  const token = unseal(cipher, settings.secrets.githubEnc);
+  if (!token) { lastUnread = null; return; }
+  const next = await fetchGithubUnread(token);
+  const fire = githubShouldFire(lastUnread, next);
+  if (next !== null) lastUnread = next;
+  if (!fire || chatOpen || inFlightChat || Date.now() - reactions.lastSpokeAt < COOLDOWN_MS) return;
+  reactions = { ...reactions, lastSpokeAt: Date.now() };
+  void say('github').catch(() => {});
+}
+
+async function refreshCalendar() {
+  const url = unseal(cipher, settings.secrets.icalEnc);
+  if (!url) { starts = []; return; }
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    if (res.ok) starts = parseIcsStarts(await res.text());
+  } catch {
+    // Offline or a bad feed: keep the last starts. Never log it: the URL is a secret.
+  }
+}
+
+function relaunch() {
+  saveSettings(app.getPath('userData'), settings); // app.exit skips before-quit
+  app.relaunch();
+  app.exit(0);
+}
+
+function openHistory() {
+  if (process.platform === 'darwin') app.focus({ steal: true });
+  if (historyWin) {
+    historyWin.focus();
+    return;
+  }
+  const w = new BrowserWindow({ width: 380, height: 520, title: 'Chog chat history', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs') } });
+  historyWin = w;
+  w.webContents.on('will-navigate', (e) => e.preventDefault());
+  w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  w.on('closed', () => { historyWin = null; });
+  w.loadFile(path.join(__dirname, 'history.html'))
+    .then(() => w.webContents.send('history-data', { name: meta.name, messages: forToken(loadChatLog(app.getPath('userData'), cipher), tokenId) }))
+    .catch(() => {}); // closed before it finished loading
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -134,11 +260,70 @@ function groundY(area: Electron.Rectangle) {
   return area.y + area.height - H;
 }
 
-async function start() {
-  settings = loadSettings(app.getPath('userData'));
-  const tokenId = Number(process.env.CHOG_TOKEN_ID ?? settings.tokenId);
+// Drives the native startup dialogs. Returns the Chog to show, or null to quit.
+async function resolveChoice(choice: Startup, base: string): Promise<{ tokenId: number; judge: boolean } | null> {
+  if (process.platform === 'darwin') app.focus({ steal: true });
+  for (;;) {
+    if (choice.kind === 'pet') return { tokenId: choice.tokenId, judge: choice.judge };
+    if (choice.kind === 'pick') {
+      const ids = choice.tokenIds.slice(0, 8);
+      const r = await dialog.showMessageBox({
+        message: 'Which Chog should live on your desktop?',
+        ...(choice.tokenIds.length > 8 ? { detail: 'Showing your first 8 Chogs.' } : {}),
+        buttons: [...ids.map((id) => `Chog #${id}`), 'Quit'],
+        cancelId: ids.length,
+      });
+      if (r.response >= ids.length) return null;
+      return { tokenId: ids[r.response], judge: false };
+    }
+    const intro = choice.kind === 'no-chog' ? 'This wallet holds no Chog Genesis NFT.' : 'Chog Buddy needs a Chog Genesis NFT.';
+    const r = await dialog.showMessageBox({ message: intro, detail: 'Sign in with the wallet that holds your Chog, or try the labelled demo Chog (Judge Mode).', buttons: ['Sign in with wallet', 'Judge Mode (demo Chog)', 'Quit'], cancelId: 2 });
+    if (r.response === 2) return null;
+    if (r.response === 1) {
+      settings.judgeMode = true;
+      settings.session = null; // a later wallet sign-in must not run the ownership check against the demo token
+      return { tokenId: JUDGE_TOKEN_ID, judge: true };
+    }
+    try {
+      const s = await startSignIn({ apiUrl: base, open: (u) => void shell.openExternal(u).catch(() => {}) });
+      const tokenEnc = seal(cipher, s.token);
+      if (!tokenEnc) throw new Error('Secure storage unavailable');
+      settings.session = { tokenEnc, address: s.address };
+      settings.judgeMode = false;
+      const owned = await createApi({ baseUrl: base, token: s.token }).myChogs().catch(() => null);
+      if (owned) checkLost(owned);
+      choice = owned === null ? { kind: 'choose' } : chooseStartup({ judgeMode: false, signedIn: true, owned, savedTokenId: null });
+    } catch (e) {
+      await dialog.showMessageBox({ type: 'warning', message: `Sign-in failed: ${(e as Error).message}` });
+      choice = { kind: 'choose' };
+    }
+  }
+}
 
-  let meta: ChogMetadata;
+async function start() {
+  const userData = app.getPath('userData');
+  settings = loadSettings(userData);
+  startedJudge = settings.judgeMode; // before resolveChoice mutates it
+  const base = apiUrl();
+  const sessionToken = settings.session ? unseal(cipher, settings.session.tokenEnc) : null;
+  // Judge Mode never asks the server about ownership.
+  const owned = sessionToken && !settings.judgeMode ? await createApi({ baseUrl: base, token: sessionToken }).myChogs().catch((e) => { if (e instanceof ApiError && e.status === 401) settings.session = null; return null; }) : null;
+  if (owned !== null) settings.lastOwnershipCheck = Date.now();
+  const envTokenId = process.env.CHOG_TOKEN_ID ? Number(process.env.CHOG_TOKEN_ID) : undefined;
+  const startup = chooseStartup({ envTokenId, judgeMode: settings.judgeMode, signedIn: !!sessionToken && !!settings.session, owned, savedTokenId: settings.session ? settings.tokenId : null });
+  if (owned !== null && settings.tokenId && checkLost(owned)) {
+    await dialog.showMessageBox({ message: `Chog #${settings.tokenId} is no longer in your wallet, so its diary and chat history were cleared. Its Soul stays with the Chog.` });
+  }
+  const choice = await resolveChoice(startup, base);
+  if (!choice) {
+    app.quit();
+    return;
+  }
+  tokenId = choice.tokenId;
+  judge = choice.judge;
+  if (!process.env.CHOG_TOKEN_ID) settings.tokenId = tokenId; // the env override is a dev switch, never persisted
+  saveSettings(userData, settings);
+
   let imageBytes: Uint8Array;
   try {
     meta = await loadChog(tokenId);
@@ -151,10 +336,11 @@ async function start() {
   archetype = pickArchetype(meta);
   reactions = initialState(Date.now());
   chat = new ChatSession(
-    () => [createServerChat({ apiUrl: apiUrl(), tokenId: meta.tokenId }), createOllama({ model: settings.chat.ollamaModel }), createGemini({ apiKey: geminiKey() })],
+    () => [createServerChat({ apiUrl: apiUrl(), tokenId: meta.tokenId, token: currentToken() }), createOllama({ model: settings.chat.ollamaModel }), createGemini({ apiKey: geminiKey() })],
     () => settings.chat.provider,
     () => buildSystemPrompt({ chogName: meta.name, archetype, totals: settings.today.totals }),
   );
+  chat.history = forToken(loadChatLog(userData, cipher), tokenId).slice(-HISTORY_CAP).map(({ role, content }) => ({ role, content }));
   if (!globalShortcut.register('Control+Shift+Space', () => (chatOpen ? closeChat() : openChat('chat')))) console.warn('Chog Buddy: hotkey Ctrl+Shift+Space unavailable');
   app.on('will-quit', () => globalShortcut.unregisterAll());
 
@@ -180,7 +366,7 @@ async function start() {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   await win.loadFile(path.join(__dirname, 'index.html'));
   const side = meta.attributes.find((a) => a.trait_type === 'Side')?.value === 'Left' ? 'Left' : 'Right';
-  win.webContents.send('init', { imageBytes, attributes: meta.attributes, side, name: meta.name });
+  win.webContents.send('init', { imageBytes, attributes: meta.attributes, side, name: meta.name, skin: settings.skin });
 
   let last = Date.now();
   setInterval(() => {
@@ -213,7 +399,14 @@ async function start() {
   const { activeWindow } = await import('get-windows');
   let inFlight = false;
   let lastSave = 0;
-  app.on('before-quit', () => saveSettings(app.getPath('userData'), settings));
+  let diaryDay = '';
+  app.on('before-quit', () => {
+    try {
+      saveSettings(app.getPath('userData'), settings);
+    } catch {
+      console.warn('Chog Buddy: could not save settings on quit');
+    }
+  });
   setInterval(async () => {
     if (inFlight) return;
     if (powerMonitor.getSystemIdleTime() >= PAUSE_SEC) return; // paused: nothing to observe
@@ -226,18 +419,22 @@ async function start() {
     lastCategory = category;
 
     const day = dayKey(now);
-    if (settings.today.day !== day) settings.today = { day, totals: emptyTotals() };
+    rollDay(now);
     settings.today.totals = addSample(settings.today.totals, category, POLL_MS / 1000, now.getHours());
     if (Date.now() - lastSave > 60_000) {
       lastSave = Date.now();
       saveSettings(app.getPath('userData'), settings);
+    }
+    if (now.getHours() >= 21 && diaryDay !== day) {
+      diaryDay = day; // first poll at or after 21:00: write today's entry quietly if it has none
+      void ensureDiary().catch(() => {});
     }
 
     const r = detectTrigger(reactions, { at: now.getTime(), category, hour: now.getHours(), day }, settings.focusMode);
     reactions = r.state;
     if (!r.trigger) return;
     if (chatOpen || inFlightChat) return; // don't clobber a chat reply
-    say(r.trigger);
+    void say(r.trigger).catch(() => {});
     // Hop onto the active window's title bar sometimes, if it's big enough and not fullscreen-top.
     const b = w?.bounds;
     const [, py] = win!.getPosition();
@@ -251,11 +448,78 @@ async function start() {
     }
   }, POLL_MS);
 
+  if (!judge && !process.env.CHOG_TOKEN_ID) {
+    // Upload + rollover + ownership re-check, every 10 min tick; each job has its own due rule.
+    setInterval(async () => {
+      rollDay(new Date()); // rolls the day even while the owner is idle and the poll loop is paused
+      const token = currentToken();
+      const api = createApi({ baseUrl: base, token });
+      const expireSession = async () => {
+        settings.session = null;
+        saveSettings(userData, settings);
+        await dialog.showMessageBox({ message: 'Your sign-in expired. Chog Buddy will restart so you can sign in again.' });
+        relaunch();
+      };
+      // Yesterday's final totals go up on the first tick after midnight, not at the next hourly slot.
+      if (settings.yesterday || uploadDue(settings.lastUpload, Date.now())) {
+        const jobs = uploadsFor({ judge, signedIn: !!token, tokenId, today: settings.today, yesterday: settings.yesterday });
+        try {
+          for (const j of jobs) await api.uploadActivity(j);
+          if (jobs.length) { settings.lastUpload = Date.now(); settings.yesterday = null; } // only once every job succeeded
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 401) { await expireSession(); return; }
+          if (e instanceof ApiError && e.status === 400) settings.yesterday = null; // too old for the backend, it can never be sent
+          else if (e instanceof ApiError && e.status === 403) settings.lastOwnershipCheck = 0; // re-check ownership now
+          // anything else: retry next tick
+        }
+      }
+      if (token && ownershipCheckDue(settings.lastOwnershipCheck, Date.now())) {
+        let expired = false;
+        const owned = await api.myChogs().catch((e) => { expired = e instanceof ApiError && e.status === 401; return null; });
+        if (expired) { await expireSession(); return; }
+        if (owned !== null) settings.lastOwnershipCheck = Date.now();
+        if (owned && checkLost(owned)) {
+          settings.session = null;
+          saveSettings(userData, settings);
+          await dialog.showMessageBox({ message: `Chog #${tokenId} left your wallet. Its diary and chat history were cleared. Restart Chog Buddy to choose again.` });
+          app.quit();
+          return;
+        }
+      }
+      saveSettings(userData, settings);
+    }, 10 * 60_000);
+  }
+  void pollGithub();
+  setInterval(pollGithub, 5 * 60_000);
+  void refreshCalendar();
+  setInterval(refreshCalendar, 15 * 60_000);
+  setInterval(() => {
+    if (chatOpen || inFlightChat) return; // never clobber a chat; try again next minute
+    const t = nextMeetingWithin(starts, Date.now(), 5 * 60_000, warned);
+    if (t === null) return;
+    warned.add(t);
+    reactions = { ...reactions, lastSpokeAt: Date.now() }; // bypasses the cooldown, but still holds off other lines
+    void say('meeting_soon').catch(() => {});
+  }, 60_000);
+
   tray = new Tray(nativeImage.createFromDataURL(TRAY_ICON));
   rebuildMenu = () =>
     tray!.setContextMenu(
       Menu.buildFromTemplate([
-        { label: `${meta.name} · ${ARCHETYPES[archetype].name}`, enabled: false },
+        { label: `${meta.name} · ${ARCHETYPES[archetype].name}${judge ? ' · Judge Mode (demo Chog)' : ''}`, enabled: false },
+        {
+          label: 'Skin',
+          submenu: SKIN_IDS.filter((id) => !(judge && id === 'nft')).map((id) => ({
+            label: { classic: 'Classic Chog', hoodie: 'Hoodie', jacket: 'Jacket', dress: 'Dress', nft: "My NFT skin (your Chog's traits)" }[id],
+            type: 'radio' as const,
+            checked: settings.skin === id,
+            click: () => {
+              settings.skin = id;
+              saveSettings(app.getPath('userData'), settings);
+              win?.webContents.send('set-skin', id);
+            },
+          })),
+        },
         { type: 'separator' },
         {
           label: 'Focus Mode',
@@ -286,7 +550,7 @@ async function start() {
                     checked: m === settings.chat.ollamaModel || m.startsWith(`${settings.chat.ollamaModel}:`),
                     click: () => { settings.chat.ollamaModel = m; saveSettings(app.getPath('userData'), settings); },
                   }))
-                : [{ label: 'brew install ollama && ollama pull llama3.2', enabled: false }],
+                : [{ label: 'Install Ollama from ollama.com, then run: ollama pull llama3.2', enabled: false }],
             },
             { label: settings.chat.geminiKeyEnc ? 'Replace Gemini key…' : 'Set Gemini key…', click: () => openChat('key') },
             {
@@ -297,7 +561,40 @@ async function start() {
             { label: 'Server and Gemini chats go to Google Gemini; Ollama stays on this computer', enabled: false },
           ],
         },
+        {
+          label: 'Connections',
+          submenu: [
+            { label: 'Set GitHub token…', click: () => openChat('github') },
+            { label: 'Classic token with the notifications scope', enabled: false },
+            {
+              label: 'Clear GitHub token',
+              enabled: !!settings.secrets.githubEnc,
+              click: () => { settings.secrets.githubEnc = null; saveSettings(userData, settings); rebuildMenu?.(); },
+            },
+            { type: 'separator' },
+            { label: 'Set calendar iCal URL…', click: () => openChat('ical') },
+            { label: 'Google Calendar → Settings → Secret address in iCal format', enabled: false },
+            {
+              label: 'Clear calendar iCal URL',
+              enabled: !!settings.secrets.icalEnc,
+              click: () => { settings.secrets.icalEnc = null; starts = []; saveSettings(userData, settings); rebuildMenu?.(); },
+            },
+          ],
+        },
         { label: 'Poke your Chog', click: () => poke() },
+        {
+          label: "Today's diary",
+          click: () => void showDiary().catch((e) => dialog.showErrorBox('Chog Buddy', `Could not write today's diary.\n\n${(e as Error).message}`)),
+        },
+        { label: 'Chat history…', click: () => openHistory() },
+        {
+          label: 'Clear chat history',
+          click: () => {
+            wipeChatLog(userData);
+            if (chat) chat.history = [];
+            historyWin?.close();
+          },
+        },
         {
           label: 'Export for Codex/Petdex…',
           enabled: !!atlasPng,
@@ -318,6 +615,18 @@ async function start() {
           },
         },
         { type: 'separator' },
+        ...(judge ? [{ label: 'Sign in with wallet…', click: () => { settings.judgeMode = false; relaunch(); } }] : []),
+        {
+          label: 'Sign out',
+          enabled: !!settings.session,
+          click: () => {
+            settings.session = null;
+            settings.judgeMode = false;
+            wipeDiary(userData);
+            wipeChatLog(userData);
+            relaunch();
+          },
+        },
         { label: 'Quit', click: () => app.quit() },
       ]),
     );
@@ -326,19 +635,20 @@ async function start() {
   refreshOllamaModels();
 }
 
-ipcMain.on('drag-start', () => {
-  if (!win) return;
+ipcMain.on('drag-start', (e) => {
+  if (!win || e.sender !== win.webContents) return;
   dragging = true;
   const p = screen.getCursorScreenPoint();
   const [x, y] = win.getPosition();
   dragOffset = { x: p.x - x, y: p.y - y };
 });
-ipcMain.on('drag-move', (_e, p: { x: number; y: number }) => {
+ipcMain.on('drag-move', (e, p: { x: number; y: number }) => {
+  if (e.sender !== win?.webContents) return;
   if (!Number.isFinite(p?.x) || !Number.isFinite(p?.y)) return;
   win?.setPosition(Math.round(p.x - dragOffset.x), Math.round(p.y - dragOffset.y));
 });
-ipcMain.on('drag-end', () => {
-  if (!win) return;
+ipcMain.on('drag-end', (e) => {
+  if (!win || e.sender !== win.webContents) return;
   const [x, y] = win.getPosition();
   const a = workAreaFor(x, y);
   walk = { ...walk, x: clampX(x, a.x, a.x + a.width - W) };
@@ -346,12 +656,13 @@ ipcMain.on('drag-end', () => {
   dragging = false;
 });
 
-ipcMain.on('pet-click', () => {
+ipcMain.on('pet-click', (e) => {
+  if (e.sender !== win?.webContents) return;
   reactUntil = Date.now() + REACT_MS;
   openChat('chat');
 });
-ipcMain.on('chat-send', async (_e, text: unknown) => {
-  if (!chat || typeof text !== 'string' || inFlightChat) return;
+ipcMain.on('chat-send', async (e, text: unknown) => {
+  if (e.sender !== win?.webContents || !chat || typeof text !== 'string' || inFlightChat) return;
   inFlightChat = true;
   try {
     talkUntil = Date.now() + 60_000;
@@ -360,6 +671,16 @@ ipcMain.on('chat-send', async (_e, text: unknown) => {
       win?.webContents.send('chat-token', t);
     });
     if (r.failed) win?.webContents.send('chat-replace', r.reply);
+    else if (r.reply) {
+      try {
+        appendChatLog(app.getPath('userData'), cipher, [
+          { role: 'user', content: text.trim().slice(0, MAX_INPUT), at: Date.now(), tokenId },
+          { role: 'assistant', content: r.reply, at: Date.now(), tokenId },
+        ]);
+      } catch {
+        console.warn('Chog Buddy: could not save chat history'); // the chat itself still works
+      }
+    }
     talkUntil = Date.now() + TALK_MS;
     win?.webContents.send('chat-done', { failed: r.failed });
   } finally {
@@ -367,31 +688,49 @@ ipcMain.on('chat-send', async (_e, text: unknown) => {
   }
 });
 ipcMain.on('chat-close', () => closeChat());
-ipcMain.on('key-submit', (_e, key: unknown) => {
-  if (typeof key !== 'string') return;
+ipcMain.on('key-submit', (e, key: unknown) => {
+  if (e.sender !== win?.webContents) return;
+  const mode = secretMode; // routed by the mode main opened, never by the renderer
+  if (typeof key !== 'string' || mode === 'chat') return;
   const k = key.trim();
   closeChat();
   if (!k) return;
-  if (k.length > 200) {
-    dialog.showErrorBox('Chog Buddy', 'That key is too long, so it was not saved.');
+  if (k.length > (mode === 'ical' ? 500 : 200)) {
+    dialog.showErrorBox('Chog Buddy', 'That is too long, so it was not saved.');
     return;
   }
-  if (!safeStorage.isEncryptionAvailable()) {
-    dialog.showErrorBox('Chog Buddy', 'Secure storage is not available on this system, so the key was not saved.');
+  if (mode === 'ical' && !/^https:\/\//.test(k)) {
+    dialog.showErrorBox('Chog Buddy', 'A calendar address must start with https://, so it was not saved.');
     return;
   }
-  settings.chat.geminiKeyEnc = safeStorage.encryptString(k).toString('base64');
+  const sealed = seal(cipher, k);
+  if (!sealed) {
+    dialog.showErrorBox('Chog Buddy', 'Secure storage is not available on this system, so it was not saved.');
+    return;
+  }
+  if (mode === 'github') {
+    settings.secrets.githubEnc = sealed;
+    lastUnread = null; // the new token's first count is a baseline, not news
+    void pollGithub();
+  } else if (mode === 'ical') {
+    settings.secrets.icalEnc = sealed;
+    void refreshCalendar();
+  } else settings.chat.geminiKeyEnc = sealed;
   saveSettings(app.getPath('userData'), settings);
   rebuildMenu?.();
 });
-ipcMain.on('atlas-ready', (_e, png: Uint8Array) => {
-  if (!(png instanceof Uint8Array) || png.byteLength > 20_000_000) return;
+ipcMain.on('atlas-ready', (e, png: Uint8Array) => {
+  if (e.sender !== win?.webContents || !(png instanceof Uint8Array) || png.byteLength > 20_000_000) return;
   atlasPng = Buffer.from(png);
   rebuildMenu?.();
   if (process.env.CHOG_DUMP_ATLAS) writeFileSync(path.join(app.getPath('userData'), 'atlas.png'), atlasPng);
 });
-ipcMain.on('atlas-error', (_e, message: string) => {
+ipcMain.on('atlas-error', (e, message: string) => {
+  if (e.sender !== win?.webContents) return;
   dialog.showErrorBox('Chog Buddy', `Could not draw your Chog.\n\n${String(message).slice(0, 500)}`);
+  if (atlasPng) return; // a failed skin switch keeps the Chog that is already on screen
+  settings.skin = 'classic'; // never repeat a skin that failed to render on the next launch
+  saveSettings(app.getPath('userData'), settings);
   app.quit();
 });
 

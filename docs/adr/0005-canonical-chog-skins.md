@@ -1,0 +1,3 @@
+# Canonical pixel Chog with skins; NFT traits become a skin
+
+Supersedes the face-pasting part of ADR 0004. The pasted NFT faces were small, blurry and inconsistent at pet size, and official full-body Chog art now exists. Every Pet is the same hand-designed pixel Chog: purple spiky hood, cream face, glossy eyes, pink blush, nose and hands. It changes expression per animation (blink, sleep, happy, talk, sad). Skins dress it: Classic, Hoodie, Jacket, Dress, and "My NFT skin", which maps the owner's Body and Head traits and sampled colours onto the canonical body. The NFT stays essential through the ownership gate, the exclusive NFT skin and the token-bound Soul. Pixel style was chosen over flat cartoon to keep the existing atlas, the Petdex geometry and the Codex-pet look.

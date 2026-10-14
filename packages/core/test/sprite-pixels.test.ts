@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PixelBuffer, crop, downscaleBox, hex, mirrorX, outline, scaleNearest, shade } from '../src/sprite/pixels';
+import { PixelBuffer, crop, hex, mirrorX, outline, scaleNearest, shade } from '../src/sprite/pixels';
 
 const RED = hex('#ff0000');
 const INK = hex('#000000');
@@ -28,16 +28,13 @@ describe('PixelBuffer', () => {
     expect(b.isFilled(5, 5)).toBe(true);
     expect(b.isFilled(0, 0)).toBe(false);
   });
-  it('blit skips transparent pixels and respects the mask', () => {
+  it('blit skips transparent pixels', () => {
     const src = new PixelBuffer(2, 1);
     src.set(0, 0, RED);
     const dst = new PixelBuffer(4, 1);
     dst.blit(src, 1, 0);
     expect(dst.isFilled(1, 0)).toBe(true);
     expect(dst.isFilled(2, 0)).toBe(false);
-    const masked = new PixelBuffer(4, 1);
-    masked.blit(src, 1, 0, () => false);
-    expect(masked.isFilled(1, 0)).toBe(false);
   });
 });
 
@@ -52,13 +49,6 @@ describe('raster ops', () => {
     const c = crop(b, 2, 2, 2, 2);
     expect(c.width).toBe(2);
     expect(c.get(0, 1)).toEqual(RED);
-  });
-  it('downscaleBox averages blocks', () => {
-    const b = new PixelBuffer(2, 2);
-    b.fillRect(0, 0, 2, 2, hex('#000000'));
-    b.set(0, 0, hex('#ffffff'));
-    const d = downscaleBox(b, 1, 1);
-    expect(d.get(0, 0)[0]).toBe(64);
   });
   it('scaleNearest multiplies size and keeps hard edges', () => {
     const b = new PixelBuffer(2, 1);
