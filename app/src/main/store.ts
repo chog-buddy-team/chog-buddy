@@ -1,6 +1,8 @@
-import { readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isSkinId, type DailyTotals, type SkinId } from '@chog/core';
+import { atomicWrite } from './fsutil';
+import { JUDGE_TOKEN_ID } from './startup';
 import { dayKey, emptyTotals } from './tally';
 
 export type ChatPrefs = { provider: 'auto' | 'server' | 'ollama' | 'gemini'; ollamaModel: string; geminiKeyEnc: string | null };
@@ -18,7 +20,6 @@ export type Settings = {
   skin: SkinId;
 };
 
-const DEMO_TOKEN_ID = 5; // replaced by the signed-in Owner's choice in the integration plan
 const CHAT_DEFAULTS: ChatPrefs = { provider: 'auto', ollamaModel: 'llama3.2', geminiKeyEnc: null };
 
 // A saved nested block that is not a plain object (null, string, array) must not wipe its defaults.
@@ -26,7 +27,7 @@ const plainObject = (v: unknown) => (v && typeof v === 'object' && !Array.isArra
 
 export function loadSettings(dir: string): Settings {
   const defaults: Settings = {
-    tokenId: DEMO_TOKEN_ID, focusMode: false, today: { day: dayKey(new Date()), totals: emptyTotals() }, chat: { ...CHAT_DEFAULTS },
+    tokenId: JUDGE_TOKEN_ID, focusMode: false, today: { day: dayKey(new Date()), totals: emptyTotals() }, chat: { ...CHAT_DEFAULTS },
     judgeMode: false, session: null, secrets: { githubEnc: null, icalEnc: null }, lastUpload: 0, lastOwnershipCheck: 0, yesterday: null, skin: 'classic',
   };
   try {
@@ -38,12 +39,5 @@ export function loadSettings(dir: string): Settings {
 }
 
 export function saveSettings(dir: string, s: Settings): void {
-  const file = join(dir, 'settings.json');
-  const json = JSON.stringify(s, null, 2);
-  writeFileSync(`${file}.tmp`, json, { flush: true });
-  try {
-    renameSync(`${file}.tmp`, file); // atomic replace: a crash mid-write leaves the previous settings.json intact
-  } catch {
-    writeFileSync(file, json); // Windows: another process may block the rename (EPERM/EBUSY); a plain write still saves
-  }
+  atomicWrite(join(dir, 'settings.json'), JSON.stringify(s, null, 2));
 }

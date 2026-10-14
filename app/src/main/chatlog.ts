@@ -1,5 +1,6 @@
-import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { atomicWrite } from './fsutil';
 import type { ChatMessage } from './llm/types';
 import { seal, unseal, type Cipher } from './secrets';
 
@@ -30,10 +31,7 @@ export function appendChatLog(dir: string, c: Cipher, msgs: LoggedMessage[]): vo
   const next = [...loadChatLog(dir, c), ...msgs].slice(-CHATLOG_CAP);
   const sealed = seal(c, JSON.stringify(next));
   if (!sealed) return;
-  // Write a sibling temp file, then rename over the real one, so a crash mid-write cannot corrupt the log.
-  const tmp = join(dir, `${FILE}.tmp`);
-  writeFileSync(tmp, sealed);
-  renameSync(tmp, join(dir, FILE));
+  atomicWrite(join(dir, FILE), sealed);
 }
 
 export function wipeChatLog(dir: string): void {

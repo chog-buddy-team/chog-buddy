@@ -1,5 +1,6 @@
-import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { atomicWrite } from './fsutil';
 import { ARCHETYPES, type ArchetypeId, type Category, type DailyTotals } from '@chog/core';
 
 export type DiaryEntry = { day: string; tokenId: number; text: string };
@@ -16,10 +17,7 @@ export function loadDiary(dir: string): DiaryEntry[] {
 }
 
 export function appendDiary(dir: string, e: DiaryEntry): void {
-  // Write to a sibling temp file, then rename over the real one, so a crash mid-write cannot corrupt diary.json.
-  const tmp = join(dir, `${FILE}.tmp`);
-  writeFileSync(tmp, JSON.stringify([...loadDiary(dir), e].slice(-KEEP), null, 2));
-  renameSync(tmp, join(dir, FILE));
+  atomicWrite(join(dir, FILE), JSON.stringify([...loadDiary(dir), e].slice(-KEEP), null, 2));
 }
 
 export function wipeDiary(dir: string): void {
