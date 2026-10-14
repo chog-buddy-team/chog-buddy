@@ -42,7 +42,7 @@ Also `docs/adr/0001` (privacy), `CONTEXT.md`, and the chat design in `docs/super
   - Delete `diary.json` and clear the session's active token.
   - Tell the owner in a dialog.
   - Return to the sign-in/Judge choice.
-- **Backend base URL:** `settings.apiUrl`. Default `https://chog-buddy.vercel.app`, overridable by the `CHOG_API_URL` env var.
+- **Backend base URL:** `settings.apiUrl`. Default `https://chog-buddy-api.vercel.app`, overridable by the `CHOG_API_URL` env var.
 - **Loopback sign-in:**
   - Binds `127.0.0.1` on a random port.
   - Uses a random 32-hex `state`.
@@ -92,7 +92,226 @@ app/src/main/store.ts          + session, judgeMode, apiUrl, secrets, lastUpload
 app/src/main/reactions.ts / lines.ts   + 'github' and 'meeting_soon' Triggers
 app/src/main/main.ts           wiring
 web/app/connect/page.tsx       wallet sign-in page (needs web/ from the backend plan)
+app/src/main/chatlog.ts        encrypted chat history (Task 11)
 app/test/*.test.ts
+```
+
+---
+
+### Task 0: Keyless chat through the Chog server (priority)
+
+Added 2026-10-14 at the teammate's request. The backend has `POST /api/chat` (PRs #15 and #16). It needs no key and no sign-in, so it works in Judge Mode. The server builds the persona from the Chog's real Traits and caps daily use. Make it the chat default, and keep Ollama and the owner's own Gemini key as options.
+
+**Files:**
+- Create: `app/src/main/config.ts`, `app/src/main/llm/server.ts`
+- Modify: `app/src/main/llm/types.ts` (provider id), `app/src/main/llm/session.ts` (`ProviderPref`, auto order, error line), `app/src/main/store.ts` (`ChatPrefs.provider` union), `app/src/main/main.ts` (providers list and the tray "Chat AI" menu)
+- Test: `app/test/llm-server.test.ts`, `app/test/llm-session.test.ts`
+
+**Server contract** (from `web/lib/chat.ts`):
+- Body: `{ tokenId, messages: [{ role: 'user' | 'model', text }] }`.
+- Limits: 1–20 messages, each `text` 1–500 characters after trim, and the last message must be from `user`.
+- Response: 200 with `{ text, source: 'gemini' | 'fallback' }`. When a cap is hit, the server still returns 200 with an in-character `fallback` text. Bad input gets 400. A metadata failure gets 502.
+- An optional `authorization: Bearer <session>` header switches the caller to per-wallet caps.
+
+**Interfaces:**
+- `config.ts`:
+  - `DEFAULT_API_URL = 'https://chog-buddy-api.vercel.app'`
+  - `apiUrl(): string`, which returns `process.env.CHOG_API_URL ?? DEFAULT_API_URL`
+- `ChatProvider['id']` becomes `'server' | 'ollama' | 'gemini'`.
+- `ProviderPref` becomes `'auto' | 'server' | 'ollama' | 'gemini'`.
+- `pickProvider('auto', …)` tries `server`, then `ollama`, then `gemini`.
+- `createServerChat(opts: { apiUrl: string; tokenId: number; token?: string | null; fetchImpl?: typeof fetch; now?: () => number }): ChatProvider` behaves like this:
+  - `id: 'server'`.
+  - `available()` returns false only during a 60 s cool-down after a network failure for that `apiUrl` (module-level breaker). It never probes the network, so a message adds no latency.
+  - `stream(system, history, onToken)` ignores `system`, because the server owns the persona. It maps `assistant` → `model`, trims each text and slices it to 500 characters, drops empty texts, keeps the last 20, and posts.
+  - On success it calls `onToken(text)` once and returns `text`.
+  - Failures map to ProviderErrors:
+    - a rejected fetch → `network`, and the breaker starts
+    - 429 → `quota`
+    - 400 → `bad-response`
+    - other non-2xx → `network`, and the breaker starts
+    - a 200 without a string `text` → `bad-response`
+- `resetServerBreaker(): void` is exported for tests.
+
+- [ ] **Step 1: Write the failing tests**
+
+`app/test/llm-server.test.ts`:
+```ts
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createServerChat, resetServerBreaker } from '../src/main/llm/server';
+import { apiUrl, DEFAULT_API_URL } from '../src/main/config';
+
+const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status });
+afterEach(() => resetServerBreaker());
+
+describe('server chat', () => {
+  it('posts tokenId + user/model messages and returns the reply', async () => {
+    const f = vi.fn().mockResolvedValue(json({ text: 'Yo!', source: 'gemini' }));
+    const toks: string[] = [];
+    const p = createServerChat({ apiUrl: 'https://api.test/', tokenId: 5, fetchImpl: f });
+    const out = await p.stream('IGNORED', [{ role: 'user', content: ' hi ' }, { role: 'assistant', content: 'hey' }, { role: 'user', content: 'sup' }], (t) => toks.push(t));
+    expect(out).toBe('Yo!');
+    expect(toks).toEqual(['Yo!']);
+    const [url, init] = f.mock.calls[0];
+    expect(url).toBe('https://api.test/api/chat');
+    const body = JSON.parse(init.body);
+    expect(body).toEqual({ tokenId: 5, messages: [{ role: 'user', text: 'hi' }, { role: 'model', text: 'hey' }, { role: 'user', text: 'sup' }] });
+    expect(JSON.stringify(body)).not.toContain('IGNORED');
+    expect(init.headers.authorization).toBeUndefined();
+  });
+  it('keeps the last 20 messages, caps text at 500 and drops empty ones', async () => {
+    const f = vi.fn().mockResolvedValue(json({ text: 'ok', source: 'gemini' }));
+    const history = Array.from({ length: 24 }, (_, i) => ({ role: (i % 2 ? 'assistant' : 'user') as 'user' | 'assistant', content: i === 22 ? '   ' : 'x'.repeat(600) }));
+    history.push({ role: 'user', content: 'last' });
+    await createServerChat({ apiUrl: 'https://api.test', tokenId: 5, fetchImpl: f }).stream('', history, () => {});
+    const msgs = JSON.parse(f.mock.calls[0][1].body).messages;
+    expect(msgs.length).toBeLessThanOrEqual(20);
+    expect(msgs.at(-1)).toEqual({ role: 'user', text: 'last' });
+    expect(msgs.every((m: { text: string }) => m.text.length >= 1 && m.text.length <= 500)).toBe(true);
+  });
+  it('sends the session token when signed in', async () => {
+    const f = vi.fn().mockResolvedValue(json({ text: 'ok', source: 'gemini' }));
+    await createServerChat({ apiUrl: 'https://api.test', tokenId: 5, token: 'T', fetchImpl: f }).stream('', [{ role: 'user', content: 'a' }], () => {});
+    expect(f.mock.calls[0][1].headers.authorization).toBe('Bearer T');
+  });
+  it.each([[429, 'quota'], [400, 'bad-response'], [502, 'network'], [500, 'network']])('HTTP %i -> %s', async (status, kind) => {
+    const p = createServerChat({ apiUrl: 'https://api.test', tokenId: 5, fetchImpl: vi.fn().mockResolvedValue(json({ error: 'x' }, status)) });
+    await expect(p.stream('', [{ role: 'user', content: 'a' }], () => {})).rejects.toMatchObject({ kind });
+  });
+  it('a 200 without text is a bad-response', async () => {
+    const p = createServerChat({ apiUrl: 'https://api.test', tokenId: 5, fetchImpl: vi.fn().mockResolvedValue(json({ nope: 1 })) });
+    await expect(p.stream('', [{ role: 'user', content: 'a' }], () => {})).rejects.toMatchObject({ kind: 'bad-response' });
+  });
+  it('network failure trips a 60s breaker so auto mode falls through to Ollama/Gemini', async () => {
+    let t = 1_000;
+    const p = createServerChat({ apiUrl: 'https://api.test', tokenId: 5, now: () => t, fetchImpl: vi.fn().mockRejectedValue(new TypeError('fetch failed')) });
+    expect(await p.available()).toBe(true);
+    await expect(p.stream('', [{ role: 'user', content: 'a' }], () => {})).rejects.toMatchObject({ kind: 'network' });
+    expect(await p.available()).toBe(false);
+    t += 61_000;
+    expect(await p.available()).toBe(true);
+  });
+  it('apiUrl defaults to the production API', () => {
+    expect(DEFAULT_API_URL).toBe('https://chog-buddy-api.vercel.app');
+    expect(apiUrl()).toBe(process.env.CHOG_API_URL ?? DEFAULT_API_URL);
+  });
+});
+```
+
+Append to the `pickProvider` describe in `app/test/llm-session.test.ts` (the `fake` helper's id type widens with the union):
+```ts
+  it('auto prefers the Chog server when it is available', async () => {
+    expect((await pickProvider('auto', [fake('server', true), fake('ollama', true), fake('gemini', true)]))?.id).toBe('server');
+    expect((await pickProvider('auto', [fake('server', false), fake('ollama', true)]))?.id).toBe('ollama');
+    expect((await pickProvider('server', [fake('server', true), fake('ollama', true)]))?.id).toBe('server');
+  });
+```
+
+- [ ] **Step 2: Run the tests and confirm they fail**
+
+Run: `npm test -w chog-buddy-app`
+Expected: FAIL, because the modules are missing.
+
+- [ ] **Step 3: Implement**
+
+`app/src/main/config.ts`:
+```ts
+export const DEFAULT_API_URL = 'https://chog-buddy-api.vercel.app';
+export const apiUrl = () => process.env.CHOG_API_URL ?? DEFAULT_API_URL;
+```
+
+`app/src/main/llm/server.ts`:
+```ts
+import { ProviderError, type ChatMessage, type ChatProvider } from './types';
+
+const COOLDOWN_MS = 60_000;
+const MAX_TURNS = 20;
+const MAX_CHARS = 500;
+const downUntil = new Map<string, number>();
+
+export const resetServerBreaker = () => downUntil.clear();
+
+export function createServerChat(opts: { apiUrl: string; tokenId: number; token?: string | null; fetchImpl?: typeof fetch; now?: () => number }): ChatProvider {
+  const f = opts.fetchImpl ?? fetch;
+  const now = opts.now ?? Date.now;
+  const base = opts.apiUrl.replace(/\/+$/, '');
+  const trip = () => downUntil.set(base, now() + COOLDOWN_MS);
+  return {
+    id: 'server',
+    async available() {
+      return now() >= (downUntil.get(base) ?? 0);
+    },
+    async stream(_system: string, history: ChatMessage[], onToken: (t: string) => void) {
+      const messages = history
+        .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', text: m.content.trim().slice(0, MAX_CHARS) }))
+        .filter((m) => m.text.length > 0)
+        .slice(-MAX_TURNS);
+      let res: Response;
+      try {
+        res = await f(`${base}/api/chat`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...(opts.token ? { authorization: `Bearer ${opts.token}` } : {}) },
+          body: JSON.stringify({ tokenId: opts.tokenId, messages }),
+          signal: AbortSignal.timeout(15_000),
+        });
+      } catch (e) {
+        trip();
+        throw new ProviderError(`chog server unreachable: ${(e as Error).message}`, 'network');
+      }
+      if (res.status === 429) throw new ProviderError('chog server busy', 'quota');
+      if (res.status === 400) throw new ProviderError('chog server rejected the message', 'bad-response');
+      if (!res.ok) {
+        trip();
+        throw new ProviderError(`chog server HTTP ${res.status}`, 'network');
+      }
+      const body = (await res.json().catch(() => null)) as { text?: unknown } | null;
+      if (typeof body?.text !== 'string' || !body.text.trim()) throw new ProviderError('chog server: empty reply', 'bad-response');
+      const text = body.text.trim();
+      onToken(text);
+      return text;
+    },
+  };
+}
+```
+
+In `types.ts`: `id: 'server' | 'ollama' | 'gemini'`.
+
+In `session.ts`:
+- `export type ProviderPref = 'auto' | 'server' | 'ollama' | 'gemini';`
+- The auto order becomes `['server', 'ollama', 'gemini']`.
+- Change the `none` line to: "I can't think right now! Check the internet, or pick Ollama / a Gemini key in my tray menu."
+
+In `store.ts`: `ChatPrefs.provider` becomes `'auto' | 'server' | 'ollama' | 'gemini'`. The default stays `'auto'`.
+
+In `main.ts`:
+- Import `apiUrl` and `createServerChat`.
+- The providers factory becomes `() => [createServerChat({ apiUrl: apiUrl(), tokenId: meta.tokenId }), createOllama(...), createGemini(...)]`. Use whatever variable holds the loaded Chog's token id; `meta.tokenId` exists on `ChogMetadata`.
+- The tray "Chat AI" radio list becomes `['auto', 'server', 'ollama', 'gemini']`, with these labels:
+  - auto: `Auto (Chog server, then Ollama, then Gemini)`
+  - server: `Chog server (free, no key)`
+  - ollama: `Ollama (local, private)`
+  - gemini: `Gemini (your own key)`
+- Replace the privacy label with `Server and Gemini chats go to Google Gemini; Ollama stays on this computer`.
+
+- [ ] **Step 4: Run tests, typecheck and build, and confirm they pass**
+
+Run: `npm test -w chog-buddy-app && npm run typecheck -w chog-buddy-app && npm run build -w chog-buddy-app`
+Expected: PASS.
+
+- [ ] **Step 5: Live check against production**
+
+Run this once and record the output in the report:
+```bash
+curl -s -X POST https://chog-buddy-api.vercel.app/api/chat -H 'content-type: application/json' -d '{"tokenId":5,"messages":[{"role":"user","text":"hi"}]}'
+```
+Expected: `{"text":"…","source":"gemini"|"fallback"}`.
+
+Launch the app for 20 s with no Ollama and no key, and confirm no crash. If a quick scripted check is possible, call `createServerChat({ apiUrl: DEFAULT_API_URL, tokenId: 5 }).stream('', [{ role: 'user', content: 'hi' }], console.log)` from a tsx one-off and confirm a reply comes back.
+
+- [ ] **Step 6: Commit**
+```bash
+git add app/src/main/config.ts app/src/main/llm app/src/main/store.ts app/src/main/main.ts app/test/llm-server.test.ts app/test/llm-session.test.ts
+git commit -m "feat(app): keyless chat through the Chog server, default in Auto"
 ```
 
 ---
@@ -512,7 +731,7 @@ Append to `app/test/store.test.ts`:
   it('fills integration defaults', () => {
     const dir = mkdtempSync(join(tmpdir(), 'chog-'));
     const s = loadSettings(dir);
-    expect(s).toMatchObject({ apiUrl: 'https://chog-buddy.vercel.app', judgeMode: false, session: null, lastUpload: 0, lastOwnershipCheck: 0, yesterday: null });
+    expect(s).toMatchObject({ apiUrl: 'https://chog-buddy-api.vercel.app', judgeMode: false, session: null, lastUpload: 0, lastOwnershipCheck: 0, yesterday: null });
     expect(s.secrets).toEqual({ githubEnc: null, icalEnc: null });
   });
   it('keeps saved secrets and fills missing secret fields', () => {
@@ -550,7 +769,7 @@ export function unseal(c: Cipher, sealed: string | null): string | null {
 
 In `app/src/main/store.ts`, extend the `Settings` type with the fields listed under Interfaces, and the defaults with:
 ```ts
-apiUrl: 'https://chog-buddy.vercel.app', judgeMode: false, session: null,
+apiUrl: 'https://chog-buddy-api.vercel.app', judgeMode: false, session: null,
 secrets: { githubEnc: null, icalEnc: null }, lastUpload: 0, lastOwnershipCheck: 0, yesterday: null,
 ```
 In the merge, add `secrets: { ...defaults.secrets, ...(saved?.secrets ?? {}) }` next to `chat`.
@@ -1398,6 +1617,161 @@ Record all of this in the report. Kill only the processes you started, then rest
 ```bash
 git add app/src
 git commit -m "feat(app): sign-in, Chog picker, Judge Mode, uploads, Diary, Triggers and flavour lines"
+```
+
+---
+
+### Task 11: Saved chat history (encrypted) and history window
+
+**Files:**
+- Create: `app/src/main/chatlog.ts`, `app/src/renderer/history.html`, `app/src/renderer/history.ts`
+- Modify: `app/src/main/main.ts`, `app/src/preload.ts`, `app/build.mjs`
+- Test: `app/test/chatlog.test.ts`
+
+**Interfaces:**
+- Consumes: `Cipher`, `seal`, `unseal` (Task 4), `ChatSession` and `ChatMessage` (chat-box plan).
+- Produces:
+  - `type LoggedMessage = ChatMessage & { at: number; tokenId: number }`
+  - `CHATLOG_CAP = 200`
+  - `loadChatLog(dir: string, c: Cipher): LoggedMessage[]`. Returns `[]` if the file is missing, cannot be decrypted, or is not an array.
+  - `appendChatLog(dir: string, c: Cipher, msgs: LoggedMessage[]): void`. Keeps only the last `CHATLOG_CAP` entries. If the cipher is unavailable, it writes nothing.
+  - `wipeChatLog(dir: string): void`
+  - `forToken(log: LoggedMessage[], tokenId: number): LoggedMessage[]`
+
+The log is stored as one sealed string in `userData/chat-history.bin`. It is never written in plain text.
+
+- [ ] **Step 1: Write the failing test**
+
+`app/test/chatlog.test.ts`:
+```ts
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { CHATLOG_CAP, appendChatLog, forToken, loadChatLog, wipeChatLog } from '../src/main/chatlog';
+import type { Cipher } from '../src/main/secrets';
+
+const rev: Cipher = { available: () => true, encrypt: (s) => Buffer.from([...s].reverse().join('')), decrypt: (b) => [...b.toString()].reverse().join('') };
+const m = (i: number, tokenId = 5) => ({ role: 'user' as const, content: `msg ${i}`, at: i, tokenId });
+
+describe('chat log', () => {
+  it('round-trips encrypted and is not plain text on disk', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    appendChatLog(dir, rev, [m(1), { role: 'assistant', content: 'hi there', at: 2, tokenId: 5 }]);
+    expect(loadChatLog(dir, rev).map((x) => x.content)).toEqual(['msg 1', 'hi there']);
+    expect(readFileSync(join(dir, 'chat-history.bin'), 'utf8')).not.toContain('hi there');
+  });
+  it('caps at CHATLOG_CAP keeping the newest', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    appendChatLog(dir, rev, Array.from({ length: CHATLOG_CAP + 15 }, (_, i) => m(i)));
+    const log = loadChatLog(dir, rev);
+    expect(log).toHaveLength(CHATLOG_CAP);
+    expect(log[0].at).toBe(15);
+  });
+  it('returns [] for missing, corrupt or undecryptable files', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    expect(loadChatLog(dir, rev)).toEqual([]);
+    writeFileSync(join(dir, 'chat-history.bin'), 'garbage');
+    expect(loadChatLog(dir, { ...rev, decrypt: () => { throw new Error('x'); } })).toEqual([]);
+    expect(loadChatLog(dir, rev)).toEqual([]);
+  });
+  it('writes nothing when encryption is unavailable', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    appendChatLog(dir, { ...rev, available: () => false }, [m(1)]);
+    expect(existsSync(join(dir, 'chat-history.bin'))).toBe(false);
+  });
+  it('filters by token and wipes', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    appendChatLog(dir, rev, [m(1, 5), m(2, 9)]);
+    expect(forToken(loadChatLog(dir, rev), 9).map((x) => x.at)).toEqual([2]);
+    wipeChatLog(dir);
+    expect(loadChatLog(dir, rev)).toEqual([]);
+  });
+});
+```
+
+- [ ] **Step 2: Run the test and confirm it fails**
+
+Run: `npm test -w chog-buddy-app`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement**
+
+`app/src/main/chatlog.ts`:
+```ts
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { ChatMessage } from './llm/types';
+import { seal, unseal, type Cipher } from './secrets';
+
+export type LoggedMessage = ChatMessage & { at: number; tokenId: number };
+export const CHATLOG_CAP = 200;
+const FILE = 'chat-history.bin';
+
+export function loadChatLog(dir: string, c: Cipher): LoggedMessage[] {
+  let sealed: string;
+  try {
+    sealed = readFileSync(join(dir, FILE), 'utf8');
+  } catch {
+    return [];
+  }
+  const plain = unseal(c, sealed);
+  if (!plain) return [];
+  try {
+    const v = JSON.parse(plain);
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+export function appendChatLog(dir: string, c: Cipher, msgs: LoggedMessage[]): void {
+  if (!c.available()) return;
+  const next = [...loadChatLog(dir, c), ...msgs].slice(-CHATLOG_CAP);
+  const sealed = seal(c, JSON.stringify(next));
+  if (sealed) writeFileSync(join(dir, FILE), sealed);
+}
+
+export function wipeChatLog(dir: string): void {
+  rmSync(join(dir, FILE), { force: true });
+}
+
+export const forToken = (log: LoggedMessage[], tokenId: number) => log.filter((m) => m.tokenId === tokenId);
+```
+
+- [ ] **Step 4: Wire it up**
+1. **Seed the session.** After the `ChatSession` is created in `start()`, seed it from the log. The session caps itself at 20 messages:
+   ```ts
+   chat.history = forToken(loadChatLog(userData, cipher), tokenId).slice(-20).map(({ role, content }) => ({ role, content }));
+   ```
+2. **Append each turn.** In the `chat-send` handler, after a successful reply (`!r.failed && r.reply`), append both messages:
+   ```ts
+   appendChatLog(userData, cipher, [
+     { role: 'user', content: text.trim().slice(0, 500), at: Date.now(), tokenId },
+     { role: 'assistant', content: r.reply, at: Date.now(), tokenId },
+   ]);
+   ```
+3. **Wipe with the Diary.** Everywhere `wipeDiary(userData)` is called (ownership loss, sign-out), also call `wipeChatLog(userData)`.
+4. **Add the tray item "Chat history…".** It opens or focuses a single history window: `new BrowserWindow({ width: 380, height: 520, title: 'Chog chat history', webPreferences: { preload: path.join(__dirname, 'preload.cjs') } })`. Give the window the same `will-navigate` and `setWindowOpenHandler` guards as the Pet window, and load `history.html`. Once it finishes loading, send `history-data` with `forToken(loadChatLog(...), tokenId)` and `meta.name`. Add "Clear chat history" too: it calls `wipeChatLog`, sets `chat.history = []`, and closes the history window if it is open.
+5. **Preload.** Add `onHistory: (cb: (p: { name: string; messages: Array<{ role: string; content: string; at: number }> }) => void) => { ipcRenderer.on('history-data', (_e, p) => cb(p)); }`.
+6. **Window page.** `app/src/renderer/history.html` uses the same CSP as `index.html`, with `script-src 'self'` and no remote content. It loads `history.js`.
+7. **Renderer.** `app/src/renderer/history.ts` renders messages with `textContent` only, never `innerHTML`. Each message is a bubble: the user's on the right, the Chog's on the left. Each bubble shows a local time from `at`. The view scrolls to the bottom. With no messages, show "No chats yet. Click your Chog to talk!"
+8. **Build.** In `app/build.mjs`, add the esbuild entry `src/renderer/history.ts` → `dist/history.js` and copy `history.html`.
+
+- [ ] **Step 5: Verify**
+
+Run: `npm run typecheck -w chog-buddy-app && npm test -w chog-buddy-app && npm run build -w chog-buddy-app`
+Expected: clean.
+
+Then launch the app for 15 s and confirm no crash. Read the code paths and confirm:
+- the log is never written in plain text
+- it is wiped on sign-out and on ownership loss
+- the history window never uses `innerHTML`
+
+- [ ] **Step 6: Commit**
+```bash
+git add app/src/main/chatlog.ts app/src/main/main.ts app/src/preload.ts app/src/renderer/history.* app/build.mjs app/test/chatlog.test.ts
+git commit -m "feat(app): encrypted chat history with a history window"
 ```
 
 ---

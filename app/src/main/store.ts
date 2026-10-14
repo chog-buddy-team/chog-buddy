@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { DailyTotals } from '@chog/core';
 import { dayKey, emptyTotals } from './tally';
 
-export type ChatPrefs = { provider: 'auto' | 'ollama' | 'gemini'; ollamaModel: string; geminiKeyEnc: string | null };
+export type ChatPrefs = { provider: 'auto' | 'server' | 'ollama' | 'gemini'; ollamaModel: string; geminiKeyEnc: string | null };
 export type Settings = { tokenId: number; focusMode: boolean; today: { day: string; totals: DailyTotals }; chat: ChatPrefs };
 
 const DEMO_TOKEN_ID = 5; // replaced by the signed-in Owner's choice in the integration plan

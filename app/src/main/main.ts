@@ -4,12 +4,14 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { ARCHETYPES, categorize, fetchChogMetadata, ipfsToHttp, pickArchetype, type ArchetypeId, type ChogMetadata } from '@chog/core';
 import { clampX, stepWalk, type WalkState } from './walker';
 import { loadSettings, saveSettings, type Settings } from './store';
+import { apiUrl } from './config';
 import { detectTrigger, initialState, pickLine, type ReactionState, type Trigger } from './reactions';
 import { addSample, dayKey, emptyTotals } from './tally';
 import { chooseAnimation, PAUSE_SEC, REACT_MS, TALK_MS } from './animState';
 import { createGemini } from './llm/gemini';
 import { createOllama } from './llm/ollama';
 import { buildSystemPrompt } from './llm/prompt';
+import { createServerChat } from './llm/server';
 import { ChatSession } from './llm/session';
 import { petdexFolderName, petdexManifest } from './petdex';
 
@@ -149,7 +151,7 @@ async function start() {
   archetype = pickArchetype(meta);
   reactions = initialState(Date.now());
   chat = new ChatSession(
-    () => [createOllama({ model: settings.chat.ollamaModel }), createGemini({ apiKey: geminiKey() })],
+    () => [createServerChat({ apiUrl: apiUrl(), tokenId: meta.tokenId }), createOllama({ model: settings.chat.ollamaModel }), createGemini({ apiKey: geminiKey() })],
     () => settings.chat.provider,
     () => buildSystemPrompt({ chogName: meta.name, archetype, totals: settings.today.totals }),
   );
@@ -267,8 +269,8 @@ async function start() {
         {
           label: 'Chat AI',
           submenu: [
-            ...(['auto', 'ollama', 'gemini'] as const).map((p) => ({
-              label: p === 'auto' ? 'Auto (Ollama, then Gemini)' : p === 'ollama' ? 'Ollama (local, private)' : 'Gemini (free tier)',
+            ...(['auto', 'server', 'ollama', 'gemini'] as const).map((p) => ({
+              label: { auto: 'Auto (Chog server, then Ollama, then Gemini)', server: 'Chog server (free, no key)', ollama: 'Ollama (local, private)', gemini: 'Gemini (your own key)' }[p],
               type: 'radio' as const,
               checked: settings.chat.provider === p,
               click: () => { settings.chat.provider = p; saveSettings(app.getPath('userData'), settings); refreshOllamaModels(); },
@@ -292,7 +294,7 @@ async function start() {
               enabled: !!settings.chat.geminiKeyEnc,
               click: () => { settings.chat.geminiKeyEnc = null; saveSettings(app.getPath('userData'), settings); rebuildMenu?.(); },
             },
-            { label: 'Gemini free tier may use chats to improve Google products', enabled: false },
+            { label: 'Server and Gemini chats go to Google Gemini; Ollama stays on this computer', enabled: false },
           ],
         },
         { label: 'Poke your Chog', click: () => poke() },
