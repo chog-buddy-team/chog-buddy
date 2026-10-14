@@ -51,6 +51,14 @@ How many different wallets have owned the Chog while it was an Active Chog.
 The private daily summary a Pet writes about its Owner's day. Belongs to the Owner, lives only on the Owner's machine, and is wiped when the Owner no longer holds the Chog.
 _Avoid_: memory, log, journal
 
+**Skin**:
+The look of a Pet's outfit: Classic Chog, Hoodie, Jacket, Dress, or My NFT skin (the Chog's own traits). Cosmetic only; chosen from the tray menu. See ADR 0005.
+_Avoid_: costume, theme
+
+**Chat history**:
+The Owner's past chat with the Pet, stored encrypted and only on the Owner's machine. Up to 20 saved turns are re-sent to the chosen model as context after a restart. Wiped when the Owner no longer holds the Chog.
+_Avoid_: transcript, memory
+
 ### The owner's day
 
 **Owner**:

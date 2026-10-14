@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ATLAS_COLS, ATLAS_ROWS, ATLAS_ROW_COUNT, FACE_H, FACE_W, FRAME_H, FRAME_W, PixelBuffer, REST, SPRITE_H, SPRITE_W,
-  buildAtlas, drawChogFrame, frameAt, hex, type ChogParts, type HatStyle, type OutfitStyle,
+  ATLAS_COLS, ATLAS_ROWS, ATLAS_ROW_COUNT, CANON, EYE_X, FRAME_H, FRAME_W, HEAD_CY, PRESET_SKINS, PixelBuffer, REST, SPRITE_H, SPRITE_W,
+  buildAtlas, crop, drawChogFrame, frameAt, type ChogParts, type HatStyle, type Outfit,
 } from '../src/sprite';
 
-function parts(outfit: OutfitStyle = 'suit', hat: HatStyle = 'cap'): ChogParts {
-  const face = new PixelBuffer(FACE_W, FACE_H);
-  face.fillRect(0, 0, FACE_W, FACE_H, hex('#6a3d2b'));
-  face.fillRect(20, 6, 3, 3, hex('#000000')); // eye on viewer-right
-  const c = hex('#888888');
-  return { face, outfit, hat, palette: { skin: hex('#6a3d2b'), spike: hex('#2a2a2a'), hat: hex('#b8c4d6'), hatShade: c, outfit: hex('#b3262b'), outfitShade: c, shoes: c, ink: hex('#1b1420') } };
+const OUTFITS: Outfit[] = ['classic', 'tee', 'hoodie', 'jacket', 'dress'];
+const HATS: HatStyle[] = ['cap', 'bucket', 'wizard', 'horns', 'headband', 'crown', 'none'];
+
+function parts(outfit: Outfit = 'classic', hat: HatStyle = 'cap'): ChogParts {
+  return { outfit, hat, colors: PRESET_SKINS.hoodie.colors };
 }
 const filled = (b: PixelBuffer) => { let n = 0; for (let y = 0; y < b.height; y++) for (let x = 0; x < b.width; x++) if (b.isFilled(x, y)) n++; return n; };
+const topmost = (x: PixelBuffer) => { for (let y = 0; y < x.height; y++) for (let i = 0; i < x.width; i++) if (x.isFilled(i, y)) return y; return -1; };
+const count = (b: PixelBuffer, c: readonly number[]) => { let n = 0; for (let y = 0; y < b.height; y++) for (let x = 0; x < b.width; x++) if (b.get(x, y).every((v, i) => v === c[i])) n++; return n; };
 
 describe('drawChogFrame', () => {
   it('draws a 48x52 sprite with transparent corners', () => {
@@ -20,41 +21,31 @@ describe('drawChogFrame', () => {
     expect(f.isFilled(0, SPRITE_H - 1)).toBe(false);
     expect(filled(f)).toBeGreaterThan(600);
   });
-  it('puts the real face pixels on the head', () => {
-    const f = drawChogFrame(parts(), REST);
-    expect(f.get(10 + 21, 15 + 7)).toEqual(hex('#000000'));
+  it('shows the canonical face and hood colours on the head', () => {
+    const f = drawChogFrame(parts('tee', 'none'), REST); // classic's suit shares the hood colour, so use a tee
+    expect(count(f, CANON.face)).toBeGreaterThan(100);
+    expect(count(f, CANON.hood)).toBeGreaterThan(200);
   });
-  it('eyesClosed hides the face eye row', () => {
-    const f = drawChogFrame(parts(), { ...REST, eyesClosed: true });
-    expect(f.get(10 + 21, 15 + 7)).not.toEqual(hex('#000000'));
-  });
-  it('eyesClosed hides eye pixels anywhere in face rows 3..13', () => {
-    for (let y = 3; y <= 13; y++) {
-      const p = parts();
-      p.face.fillRect(0, 0, FACE_W, FACE_H, hex('#6a3d2b'));
-      p.face.fillRect(4, y, 3, 1, hex('#000000'));
-      p.face.fillRect(21, y, 3, 1, hex('#000000'));
-      const f = drawChogFrame(p, { ...REST, eyesClosed: true });
-      for (let x = 0; x < FACE_W; x++) for (let fy = 3; fy <= 13; fy++)
-        if (fy !== 9) expect(f.get(10 + x, 15 + fy)).not.toEqual(hex('#000000'));
-    }
+  it('expr closed swaps the open eye for a line', () => {
+    const open = drawChogFrame(parts(), REST);
+    const closed = drawChogFrame(parts(), { ...REST, expr: 'closed' });
+    expect(closed.data).not.toEqual(open.data);
+    expect(open.get(EYE_X[0] + 1, HEAD_CY + 3)).toEqual(CANON.eye);
+    expect(closed.get(EYE_X[0] + 1, HEAD_CY + 3)).not.toEqual(CANON.eye);
   });
   it('lift moves the whole sprite up', () => {
     const a = drawChogFrame(parts(), REST);
     const b = drawChogFrame(parts(), { ...REST, lift: 3 });
-    const topmost = (x: PixelBuffer) => { for (let y = 0; y < x.height; y++) for (let i = 0; i < x.width; i++) if (x.isFilled(i, y)) return y; return -1; };
     expect(topmost(a) - topmost(b)).toBe(3);
   });
   it('every outfit and hat style draws without throwing', () => {
-    for (const o of ['suit', 'shirt', 'hoodie', 'robe', 'bare'] as const)
-      for (const h of ['cap', 'bucket', 'wizard', 'horns', 'headband', 'crown', 'none'] as const)
-        expect(filled(drawChogFrame(parts(o, h), REST))).toBeGreaterThan(500);
+    for (const o of OUTFITS) for (const h of HATS) expect(filled(drawChogFrame(parts(o, h), REST))).toBeGreaterThan(500);
   });
-  it('no hat style touches row 0, at the highest pose the atlas uses', () => {
-    const topmost = (x: PixelBuffer) => { for (let y = 0; y < x.height; y++) for (let i = 0; i < x.width; i++) if (x.isFilled(i, y)) return y; return -1; };
-    for (const h of ['cap', 'bucket', 'wizard', 'horns', 'headband', 'crown', 'none'] as const)
-      for (const pose of [REST, { ...REST, lift: 3 }, { ...REST, headDy: -1 }])
-        expect(topmost(drawChogFrame(parts('suit', h), pose))).toBeGreaterThanOrEqual(1);
+  it('keeps every hat inside the frame at the worst atlas poses', () => {
+    for (const o of OUTFITS)
+      for (const h of HATS)
+        for (const pose of [REST, { ...REST, lift: 3 }, { ...REST, headDy: -1 }])
+          expect(topmost(drawChogFrame(parts(o, h), pose))).toBeGreaterThanOrEqual(1);
   });
   it('is deterministic', () => {
     expect(drawChogFrame(parts(), REST).data).toEqual(drawChogFrame(parts(), REST).data);
@@ -78,6 +69,11 @@ describe('buildAtlas', () => {
     const e = ATLAS_ROWS.walkEast.row * FRAME_H, w = ATLAS_ROWS.walkWest.row * FRAME_H;
     for (const [x, y] of [[40, 100], [150, 60], [96, 180]])
       expect(atlas.get(x, e + y)).toEqual(atlas.get(FRAME_W - 1 - x, w + y));
+  });
+  it('sleep closes the eyes: its first frame differs from the first idle frame', () => {
+    const first = (row: number) => crop(atlas, 0, row * FRAME_H, FRAME_W, FRAME_H).data;
+    const idle = first(ATLAS_ROWS.idle.row), sleep = first(ATLAS_ROWS.sleep.row);
+    expect(idle.some((v, i) => v !== sleep[i])).toBe(true);
   });
   it('row frame counts match the spec', () => {
     expect(Object.fromEntries(Object.entries(ATLAS_ROWS).map(([k, v]) => [k, [v.row, v.durationsMs.length]]))).toEqual({

@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -37,5 +37,41 @@ describe('settings store', () => {
     const dir = mkdtempSync(join(tmpdir(), 'chog-'));
     writeFileSync(join(dir, 'settings.json'), JSON.stringify({ chat: { provider: 'gemini' } }));
     expect(loadSettings(dir).chat).toEqual({ provider: 'gemini', ollamaModel: 'llama3.2', geminiKeyEnc: null });
+  });
+  it('defaults skin to classic and rejects unknown skins', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    expect(loadSettings(dir).skin).toBe('classic');
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ focusMode: true }));
+    expect(loadSettings(dir).skin).toBe('classic');
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ skin: 'banana' }));
+    expect(loadSettings(dir).skin).toBe('classic');
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ skin: 5 }));
+    expect(loadSettings(dir).skin).toBe('classic');
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ skin: 'nft' }));
+    expect(loadSettings(dir).skin).toBe('nft');
+  });
+  it('fills integration defaults', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    const s = loadSettings(dir);
+    expect(s).toMatchObject({ judgeMode: false, session: null, lastUpload: 0, lastOwnershipCheck: 0, yesterday: null });
+    expect(s.secrets).toEqual({ githubEnc: null, icalEnc: null });
+  });
+  it('keeps saved secrets and fills missing secret fields', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ secrets: { githubEnc: 'abc' } }));
+    expect(loadSettings(dir).secrets).toEqual({ githubEnc: 'abc', icalEnc: null });
+  });
+  it('falls back to secret defaults for non-object saved secrets', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    for (const bad of [null, 'abc', []]) {
+      writeFileSync(join(dir, 'settings.json'), JSON.stringify({ secrets: bad }));
+      expect(loadSettings(dir).secrets).toEqual({ githubEnc: null, icalEnc: null });
+    }
+  });
+  it('saves atomically: round-trips and leaves no .tmp file behind', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    saveSettings(dir, { ...loadSettings(dir), tokenId: 42, judgeMode: true });
+    expect(loadSettings(dir)).toMatchObject({ tokenId: 42, judgeMode: true });
+    expect(readdirSync(dir)).toEqual(['settings.json']);
   });
 });

@@ -1,5 +1,6 @@
 import { PixelBuffer, mirrorX, scaleNearest } from './pixels';
 import { REST, SPRITE_H, SPRITE_W, drawChogFrame, type ChogParts, type Pose } from './kit';
+import type { Expr } from './canon';
 
 export const FRAME_W = 192;
 export const FRAME_H = 208;
@@ -19,15 +20,15 @@ const WALK: Partial<Pose>[] = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
 });
 
 const ROWS: Record<AnimName, RowSpec> = {
-  idle: { row: 0, durationsMs: [280, 110, 110, 140, 140, 320], poses: [{}, { headDy: -1 }, { headDy: -1 }, {}, {}, { eyesClosed: true }] },
+  idle: { row: 0, durationsMs: [280, 110, 110, 140, 140, 320], poses: [{}, { headDy: -1 }, { headDy: -1 }, {}, {}, { expr: 'closed' }] },
   walkEast: { row: 1, durationsMs: [120, 120, 120, 120, 120, 120, 120, 220], poses: WALK },
   walkWest: { row: 2, durationsMs: [120, 120, 120, 120, 120, 120, 120, 220], poses: WALK, mirror: true },
-  react: { row: 3, durationsMs: [140, 140, 140, 280], poses: [{ squash: 1 }, { headDy: 1, squash: 1 }, { lift: 2, armL: -2, armR: -2 }, {}] },
-  hop: { row: 4, durationsMs: [140, 140, 140, 140, 280], poses: [{ squash: 1 }, { lift: 2 }, { lift: 3, armL: -2, armR: -2 }, { lift: 2 }, { squash: 1 }] },
-  sleep: { row: 5, durationsMs: [400, 400, 400, 400, 400, 400], poses: [0, 0, 1, 1, 1, 0].map((d) => ({ headDy: d, eyesClosed: true })) },
-  talk: { row: 6, durationsMs: [150, 150, 150, 150, 150, 280], poses: [-3, -4, -3, -4, -3, 0].map((a, i) => ({ armR: a, headDy: i % 2 ? -1 : 0 })) },
-  sad: { row: 7, durationsMs: [300, 300, 300, 300, 300, 300], poses: [0, 0, 1, 1, 0, 0].map((d) => ({ headDy: 1 + d, armL: 1, armR: 1 })) },
-  celebrate: { row: 8, durationsMs: [150, 150, 150, 150, 150, 280], poses: [0, 2, 3, 2, 0, 0].map((l) => ({ lift: l, armL: -4, armR: -4 })) },
+  react: { row: 3, durationsMs: [140, 140, 140, 280], poses: [{ squash: 1, expr: 'happy' }, { headDy: 1, squash: 1, expr: 'happy' }, { lift: 2, armL: -2, armR: -2, expr: 'happy' }, { expr: 'happy' }] },
+  hop: { row: 4, durationsMs: [140, 140, 140, 140, 280], poses: [{ squash: 1, expr: 'happy' }, { lift: 2, expr: 'happy' }, { lift: 3, armL: -2, armR: -2, expr: 'happy' }, { lift: 2, expr: 'happy' }, { squash: 1, expr: 'happy' }] },
+  sleep: { row: 5, durationsMs: [400, 400, 400, 400, 400, 400], poses: [0, 0, 1, 1, 1, 0].map((d) => ({ headDy: d, expr: 'closed' as const })) },
+  talk: { row: 6, durationsMs: [150, 150, 150, 150, 150, 280], poses: [-3, -4, -3, -4, -3, 0].map((a, i) => ({ armR: a, headDy: i % 2 ? -1 : 0, expr: (i % 2 ? 'open' : 'talk') as Expr })) },
+  sad: { row: 7, durationsMs: [300, 300, 300, 300, 300, 300], poses: [0, 0, 1, 1, 0, 0].map((d) => ({ headDy: 1 + d, armL: 1, armR: 1, expr: 'sad' as const })) },
+  celebrate: { row: 8, durationsMs: [150, 150, 150, 150, 150, 280], poses: [0, 2, 3, 2, 0, 0].map((l) => ({ lift: l, armL: -4, armR: -4, expr: 'happy' as const })) },
 };
 
 export const ATLAS_ROWS: Record<AnimName, { row: number; durationsMs: number[] }> = Object.fromEntries(
