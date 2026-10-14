@@ -10,6 +10,8 @@ export const LINES: Record<ArchetypeId, Record<Trigger, string[]>> = {
     morning: ['GOOD MORNING! Today\'s a W, I can feel it.', 'Rise and grind, partner!', 'Morning! Today\'s gonna be huge.', 'Up and at \'em, superstar!'],
     focus_violation: ['Hey hey hey, we said FOCUS! Back to it, I believe in you.', 'Video can wait. Your goals can\'t!', 'Nope nope, back to the goal!', 'That tab is a trap. You\'re better than that!'],
     pet: ['Hehe! Again!', 'Best owner ever, no cap.', 'Yesss, more pets!', 'You\'re the GOAT, you know that?'],
+    github: ['New GitHub notifications! Someone needs you, superstar!', 'Ping! GitHub is calling. Go get it!', 'More notifications? You are POPULAR.'],
+    meeting_soon: ['Meeting in 5! You got this!', 'Five minutes to showtime. Water, then crush it!', 'Meeting soon. Go be legendary.'],
   },
   grump: {
     category_switch: ['{category}. Great. Wake me when it\'s interesting.', 'Oh, {category} now. Sure.', '{category}. Wonderful. Another thing.', 'Switching again? Decide already.'],
@@ -19,6 +21,8 @@ export const LINES: Record<ArchetypeId, Record<Trigger, string[]>> = {
     morning: ['Morning. Don\'t talk to me yet.', 'Ugh. Daylight. Fine, hello.', 'Too bright. Too early. Hello.', 'Morning is a scam.'],
     focus_violation: ['Focus Mode. You turned it on. I\'m just enforcing it.', 'Close that video or I\'m telling everyone.', 'Video? Really? Disappointing.', 'I will not watch you waste time. Close it.'],
     pet: ['Don\'t.', '...fine. One more.', 'Okay okay, that\'s enough.', 'Hmph. Not terrible.'],
+    github: ['More GitHub notifications. Someone wants something, as usual.', 'Ding. GitHub again. Go deal with it.', 'New notifications. Not my problem. Yours.'],
+    meeting_soon: ['Meeting in five. Try to look awake.', 'Five minutes until people. Brace yourself.', 'Meeting soon. Water first. Not that I care.'],
   },
   lazySage: {
     category_switch: ['Ah, {category}. The river changes course.', '{category}... wake me if something happens.', '{category}. Everything is just another path.', 'Ah, {category}. Breathe first.'],
@@ -28,6 +32,8 @@ export const LINES: Record<ArchetypeId, Record<Trigger, string[]>> = {
     morning: ['Morning... too early for wisdom.', 'The sun rose. Bold of it.', 'Dawn arrives. No rush.', 'Morning tea would be wise.'],
     focus_violation: ['The video calls. Do not answer.', 'Distraction is a door. Close it gently.', 'The feed is a fog. Walk out of it.', 'What you seek is not in that video.'],
     pet: ['Mmm. Nice.', 'Zzz... oh, hi.', 'Mmm. Slightly more of that.', 'Ahh. This is the way.'],
+    github: ['Ah, GitHub stirs. The notifications will keep. Mostly.', 'Yawn... new notifications. Breathe, then read.', 'Letters from GitHub. Read them slowly.'],
+    meeting_soon: ['Five minutes to the meeting. Stand up slowly.', 'A meeting approaches. Yawn, then go.', 'Soon you must talk to people. Sip some tea first.'],
   },
   chaos: {
     category_switch: ['{category}!!! I\'m gonna press every button.', 'Switching to {category}? Chaos approved.', '{category}?! Plot twist!', 'Oh we\'re doing {category} now. I\'m in.'],
@@ -37,6 +43,8 @@ export const LINES: Record<ArchetypeId, Record<Trigger, string[]>> = {
     morning: ['Morning! I already had 4 coffees. Metaphorically.', 'NEW DAY NEW CHAOS.', 'Morning! The coffee machine and I have a plan.', 'Today we ride at dawn. Or noon.'],
     focus_violation: ['Even I think you should focus. That\'s saying something.', 'Video? Bold. Wrong, but bold.', 'FOCUS! Wait, why am I the responsible one?', 'Close it before I do something dramatic.'],
     pet: ['WHEEE!', 'Do it again and I\'ll explode (lovingly).', 'Boop accepted. Chaos intensifies.', 'Again again again!'],
+    github: ['DING! GitHub sent you mail! I ate the envelope.', 'GitHub is screaming at you. Politely. In a list.', 'New notifications! Something happened somewhere. Go find it!'],
+    meeting_soon: ['Meeting in 5! Hide! ...Or go. Going is also fine.', 'Five minutes to meeting! I packed snacks. For me.', 'Meeting soon! Pretend you\'ve read the agenda!'],
   },
   sweetheart: {
     category_switch: ['Ooh, {category}! I\'m proud of you.', '{category} time. You\'ve got this, friend.', '{category}! You\'re doing great.', 'A new thing, with a kind heart. Go you!'],
@@ -46,5 +54,7 @@ export const LINES: Record<ArchetypeId, Record<Trigger, string[]>> = {
     morning: ['Good morning! I hope today is kind to you.', 'Morning, sunshine!', 'A fresh start, just for you.', 'Good morning! Be gentle with yourself.'],
     focus_violation: ['I know it\'s tempting... but you wanted to focus today.', 'Let\'s save that video for later, together?', 'You can do it. Video later, okay?', 'I believe in you, even when it\'s hard.'],
     pet: ['Aww, thank you!', 'Hehe, that tickles!', 'That feels so nice!', 'Aww, you\'re the sweetest.'],
+    github: ['You have new GitHub notifications. No rush, okay?', 'GitHub left you a little note. Take your time!', 'Some notifications arrived! I hope they\'re kind ones.'],
+    meeting_soon: ['Meeting in five minutes. You\'re going to do great!', 'Almost meeting time. Take a deep breath, friend.', 'Five minutes! How are you feeling? Water first, okay?'],
   },
 };
