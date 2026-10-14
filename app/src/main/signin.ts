@@ -10,6 +10,7 @@ export function startSignIn(opts: { apiUrl: string; open: (url: string) => void;
       res.setHeader('access-control-allow-origin', origin);
       res.setHeader('access-control-allow-methods', 'POST, OPTIONS');
       res.setHeader('access-control-allow-headers', 'content-type');
+      res.setHeader('access-control-allow-private-network', 'true');
     };
     const finish = (err: Error | null, value?: { token: string; address: string }) => {
       if (done) return;
