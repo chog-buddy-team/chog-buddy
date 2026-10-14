@@ -86,7 +86,11 @@ describe('pickLine', () => {
   });
   it('has lines for every archetype x trigger', () => {
     const archetypes = ['hype', 'grump', 'lazySage', 'chaos', 'sweetheart'] as const;
-    const triggers = ['category_switch', 'long_session', 'idle_return', 'late_night', 'morning', 'focus_violation', 'pet'] as const;
+    const triggers = ['category_switch', 'long_session', 'idle_return', 'late_night', 'morning', 'focus_violation', 'pet', 'github', 'meeting_soon'] as const;
     for (const a of archetypes) for (const t of triggers) expect(pickLine(a, t, 'coding', () => 0.99).length).toBeGreaterThan(0);
+  });
+  it('has lines for the external triggers', () => {
+    for (const a of ['hype', 'grump', 'lazySage', 'chaos', 'sweetheart'] as const)
+      for (const t of ['github', 'meeting_soon'] as const) expect(pickLine(a, t, 'coding', () => 0.5).length).toBeGreaterThan(0);
   });
 });
