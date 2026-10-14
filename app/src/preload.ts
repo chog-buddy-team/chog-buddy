@@ -23,6 +23,7 @@ const api = {
   keySubmit: (key: string) => ipcRenderer.send('key-submit', key),
   chatClose: () => ipcRenderer.send('chat-close'),
   petClick: () => ipcRenderer.send('pet-click'),
+  onHistory: (cb: (p: { name: string; messages: Array<{ role: string; content: string; at: number }> }) => void) => { ipcRenderer.on('history-data', (_e, p) => cb(p)); },
 };
 
 contextBridge.exposeInMainWorld('chog', api);

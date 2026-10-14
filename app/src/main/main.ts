@@ -12,6 +12,7 @@ import { startSignIn } from './signin';
 import { chooseStartup, decideOwnership, JUDGE_TOKEN_ID, ownershipCheckDue, type Startup } from './startup';
 import { rollover, uploadDue, uploadsFor } from './upload';
 import { appendDiary, loadDiary, localDiaryPrompt, wipeDiary, writeDiary, type DiaryEntry } from './diary';
+import { appendChatLog, forToken, loadChatLog, wipeChatLog } from './chatlog';
 import { fetchGithubUnread, githubShouldFire } from './triggers/github';
 import { nextMeetingWithin, parseIcsStarts } from './triggers/ical';
 import { flavourLine, flavourPrompt } from './flavour';
@@ -22,7 +23,7 @@ import { createGemini } from './llm/gemini';
 import { createOllama } from './llm/ollama';
 import { buildSystemPrompt } from './llm/prompt';
 import { createServerChat } from './llm/server';
-import { ChatSession, pickProvider } from './llm/session';
+import { ChatSession, HISTORY_CAP, MAX_INPUT, pickProvider } from './llm/session';
 import { petdexFolderName, petdexManifest } from './petdex';
 
 const W = 192;
@@ -63,6 +64,7 @@ let lastUnread: number | null = null;
 let starts: number[] = [];
 const warned = new Set<number>();
 let diaryBusy: Promise<DiaryEntry> | null = null;
+let historyWin: BrowserWindow | null = null;
 
 const cipher: Cipher = {
   available: () => safeStorage.isEncryptionAvailable(),
@@ -191,6 +193,22 @@ function relaunch() {
   app.exit(0);
 }
 
+function openHistory() {
+  if (process.platform === 'darwin') app.focus({ steal: true });
+  if (historyWin) {
+    historyWin.focus();
+    return;
+  }
+  const w = new BrowserWindow({ width: 380, height: 520, title: 'Chog chat history', webPreferences: { preload: path.join(__dirname, 'preload.cjs') } });
+  historyWin = w;
+  w.webContents.on('will-navigate', (e) => e.preventDefault());
+  w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  w.on('closed', () => { historyWin = null; });
+  w.loadFile(path.join(__dirname, 'history.html'))
+    .then(() => w.webContents.send('history-data', { name: meta.name, messages: forToken(loadChatLog(app.getPath('userData'), cipher), tokenId) }))
+    .catch(() => {}); // closed before it finished loading
+}
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
 app.dock?.hide();
@@ -276,7 +294,8 @@ async function start() {
   const startup = chooseStartup({ envTokenId, judgeMode: settings.judgeMode, signedIn: !!sessionToken, owned, savedTokenId: settings.session ? settings.tokenId : null });
   if (owned !== null && settings.tokenId && decideOwnership(settings.tokenId, owned) === 'lost') {
     wipeDiary(userData);
-    await dialog.showMessageBox({ message: `Chog #${settings.tokenId} is no longer in your wallet, so its diary was cleared. Its Soul stays with the Chog.` });
+    wipeChatLog(userData);
+    await dialog.showMessageBox({ message: `Chog #${settings.tokenId} is no longer in your wallet, so its diary and chat history were cleared. Its Soul stays with the Chog.` });
   }
   const choice = await resolveChoice(startup, base);
   if (!choice) {
@@ -304,6 +323,7 @@ async function start() {
     () => settings.chat.provider,
     () => buildSystemPrompt({ chogName: meta.name, archetype, totals: settings.today.totals }),
   );
+  chat.history = forToken(loadChatLog(userData, cipher), tokenId).slice(-HISTORY_CAP).map(({ role, content }) => ({ role, content }));
   if (!globalShortcut.register('Control+Shift+Space', () => (chatOpen ? closeChat() : openChat('chat')))) console.warn('Chog Buddy: hotkey Ctrl+Shift+Space unavailable');
   app.on('will-quit', () => globalShortcut.unregisterAll());
 
@@ -430,9 +450,10 @@ async function start() {
         if (owned !== null) settings.lastOwnershipCheck = Date.now();
         if (decideOwnership(tokenId, owned) === 'lost') {
           wipeDiary(userData);
+          wipeChatLog(userData);
           settings.session = null;
           saveSettings(userData, settings);
-          await dialog.showMessageBox({ message: `Chog #${tokenId} left your wallet. Its diary was cleared. Restart Chog Buddy to choose again.` });
+          await dialog.showMessageBox({ message: `Chog #${tokenId} left your wallet. Its diary and chat history were cleared. Restart Chog Buddy to choose again.` });
           app.quit();
           return;
         }
@@ -524,6 +545,15 @@ async function start() {
           label: "Today's diary",
           click: () => void showDiary().catch((e) => dialog.showErrorBox('Chog Buddy', `Could not write today's diary.\n\n${(e as Error).message}`)),
         },
+        { label: 'Chat history…', click: () => openHistory() },
+        {
+          label: 'Clear chat history',
+          click: () => {
+            wipeChatLog(userData);
+            if (chat) chat.history = [];
+            historyWin?.close();
+          },
+        },
         {
           label: 'Export for Codex/Petdex…',
           enabled: !!atlasPng,
@@ -552,6 +582,7 @@ async function start() {
             settings.session = null;
             settings.judgeMode = false;
             wipeDiary(userData);
+            wipeChatLog(userData);
             relaunch();
           },
         },
@@ -597,6 +628,16 @@ ipcMain.on('chat-send', async (_e, text: unknown) => {
       win?.webContents.send('chat-token', t);
     });
     if (r.failed) win?.webContents.send('chat-replace', r.reply);
+    else if (r.reply) {
+      try {
+        appendChatLog(app.getPath('userData'), cipher, [
+          { role: 'user', content: text.trim().slice(0, MAX_INPUT), at: Date.now(), tokenId },
+          { role: 'assistant', content: r.reply, at: Date.now(), tokenId },
+        ]);
+      } catch {
+        console.warn('Chog Buddy: could not save chat history'); // the chat itself still works
+      }
+    }
     talkUntil = Date.now() + TALK_MS;
     win?.webContents.send('chat-done', { failed: r.failed });
   } finally {
