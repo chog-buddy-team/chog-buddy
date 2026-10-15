@@ -24,7 +24,8 @@ export function moodLine(archetype: ArchetypeId | null, t: DailyTotals | null): 
 const dayBefore = (d: string) => new Date(Date.parse(`${d}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 
 export function buildPark(rows: ParkRow[], metas: Map<number, ParkMeta>, today: string) {
-  const fresh = new Set([today, dayBefore(today)]);
+  // Owner-local days run up to a day ahead of UTC (east of UTC), so 'today' covers yesterday through tomorrow.
+  const oldest = dayBefore(today);
   const chogs: ParkChog[] = rows.map((r) => {
     let t: DailyTotals | null = null;
     try { t = parseDailyTotals(r.totals); } catch { t = null; }
@@ -43,20 +44,20 @@ export function buildPark(rows: ParkRow[], metas: Map<number, ParkMeta>, today: 
   });
   chogs.sort((a, b) => (b.soul?.level ?? -1) - (a.soul?.level ?? -1) || a.tokenId - b.tokenId);
   const leaderboard = chogs
-    .filter((c) => fresh.has(c.day) && c.focusMinutes > 0)
+    .filter((c) => !c.demo && c.day >= oldest && c.focusMinutes > 0) // the demo Chog's day is made up, so it never ranks
     .sort((a, b) => b.focusMinutes - a.focusMinutes || a.tokenId - b.tokenId)
     .slice(0, 10)
     .map(({ tokenId, name, focusMinutes }) => ({ tokenId, name, focusMinutes }));
   return { chogs, leaderboard };
 }
 
-// ponytail: one metadata fetch per active Chog every 5 min (page revalidate); cache metadata in the DB if the Park grows past ~200 Chogs.
+// ponytail: one metadata fetch per active Chog every 5 min (page revalidate); cache metadata in the DB if the Park grows past ~200 Chogs. limit 300 cuts by token id, not recency.
 export async function loadPark() {
   const rows = (await sql`
     select distinct on (a.token_id) a.token_id, to_char(a.day, 'YYYY-MM-DD') as day, a.totals, a.owner = 'demo' as demo,
       s.night_owl, s.grinder, s.social, s.creator, s.level, to_char(current_date, 'YYYY-MM-DD') as today
     from activity a left join souls s on s.token_id = a.token_id
-    where a.day >= current_date - 7
+    where a.day > current_date - 7
     order by a.token_id, a.day desc
     limit 300`) as Array<{ token_id: number; day: string; totals: unknown; demo: boolean; night_owl: number | null; grinder: number | null; social: number | null; creator: number | null; level: number | null; today: string }>;
   const today = rows[0]?.today ?? new Date().toISOString().slice(0, 10);

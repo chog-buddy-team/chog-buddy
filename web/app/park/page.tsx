@@ -8,7 +8,7 @@ const AXES = [['nightOwl', 'Night owl'], ['grinder', 'Grinder'], ['social', 'Soc
 
 export default async function Park() {
   let park: Awaited<ReturnType<typeof loadPark>> | null = null;
-  try { park = await loadPark(); } catch { park = null; }
+  try { park = await loadPark(); } catch (e) { console.error('chog park', e); park = null; }
   const contract = process.env.SOUL_CONTRACT;
   return (
     <main className={s.main}>

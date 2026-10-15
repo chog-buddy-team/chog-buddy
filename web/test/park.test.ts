@@ -44,6 +44,10 @@ describe('buildPark', () => {
     expect(p.leaderboard.some((l) => l.tokenId === 200 || l.tokenId === 201)).toBe(false);
     expect(p.chogs.some((c) => c.tokenId === 200)).toBe(true); // stale Chogs keep their card
   });
+  it('leaderboard: keeps owners a day ahead of UTC and never ranks the demo Chog', () => {
+    const p = buildPark([row(9, '2026-10-16', { coding: 40 }), row(5, '2026-10-15', { coding: 300 }, { demo: true })], metas, '2026-10-15');
+    expect(p.leaderboard.map((l) => l.tokenId)).toEqual([9]);
+  });
   it('labels the demo Chog', () => {
     expect(buildPark([row(5, '2026-10-15', {}, { demo: true })], metas, '2026-10-15').chogs[0].demo).toBe(true);
   });
