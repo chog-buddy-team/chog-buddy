@@ -40,7 +40,7 @@
 @keyframes sheen { from { --sheen: 20deg; } to { --sheen: 260deg; } }
 @media (prefers-reduced-motion: reduce) { .board { animation: none; } }
 .boardTitle { font-family: var(--font-display), system-ui, sans-serif; font-weight: 400; font-size: clamp(1.5rem, 3.5vw, 2rem); line-height: 1.1; }
-.boardNote { margin-top: 4px; color: #4a3570; }
+.boardNote { margin-top: 4px; color: var(--ink-soft); }
 .boardEmpty { margin-top: 14px; font-weight: 600; }
 
 .ranks { list-style: none; margin-top: 14px; display: grid; gap: 2px; }
@@ -80,14 +80,14 @@
 .name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-family: var(--font-display), system-ui, sans-serif; font-weight: 400; font-size: 1.3rem; line-height: 1.1; color: var(--hood-deep); overflow-wrap: anywhere; }
 .demo { padding: 3px 8px; border-radius: 999px; background: var(--pink); color: var(--ink); }
 
-.code { display: flex; flex-wrap: wrap; gap: 4px 10px; color: #4a3570; }
+.code { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--ink-soft); }
 .code span { white-space: nowrap; }
 .code span:not(:last-child)::after { content: '·'; margin-left: 10px; } /* the dot ends a segment, so no line starts with one */
 
 .axes { display: grid; gap: 6px; margin-top: 2px; }
 .axis { display: grid; grid-template-columns: 5.5em 1fr; align-items: center; gap: 8px; font-size: 0.82rem; }
 .axis dt { font-weight: 600; }
-.axis dd { position: relative; display: flex; align-items: center; height: 14px; border-radius: 999px; background: #efe6fb; }
+.axis dd { position: relative; display: flex; align-items: center; height: 14px; border-radius: 999px; background: var(--bar-track); }
 .bar { display: block; height: 100%; border-radius: 999px; background: var(--hood); }
 .val { position: absolute; right: 6px; font-size: 0.66rem; color: var(--ink); }
 

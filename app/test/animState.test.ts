@@ -29,4 +29,16 @@ describe('chooseAnimation', () => {
   it('a poke wakes a dozing Chog for the react window', () => {
     expect(chooseAnimation({ ...base, userIdleSec: DOZE_SEC + 10, reactUntil: 2000 }).anim).toBe('react');
   });
+  it('a mood beats talk, walk and sleep while it lasts, then expires', () => {
+    const mood = { mood: 'celebrate' as const, moodUntil: 2000 };
+    expect(chooseAnimation({ ...base, ...mood })).toEqual({ anim: 'celebrate', paused: false, canWalk: false });
+    expect(chooseAnimation({ ...base, ...mood, talkUntil: 2000, reactUntil: 2000 }).anim).toBe('celebrate');
+    expect(chooseAnimation({ ...base, ...mood, userIdleSec: PAUSE_SEC }).anim).toBe('celebrate');
+    expect(chooseAnimation({ ...base, mood: 'sad', moodUntil: 2000 }).anim).toBe('sad');
+    expect(chooseAnimation({ ...base, ...mood, now: 2000 }).anim).toBe('walkEast');
+    expect(chooseAnimation({ ...base, mood: null, moodUntil: 2000 }).anim).toBe('walkEast');
+  });
+  it('dragging still beats a mood', () => {
+    expect(chooseAnimation({ ...base, dragging: true, mood: 'sad', moodUntil: 2000 }).anim).toBe('hop');
+  });
 });

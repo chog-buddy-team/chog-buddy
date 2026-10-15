@@ -5,10 +5,11 @@ export const PAUSE_SEC = 900;
 export const REACT_MS = 700;
 export const TALK_MS = 2500;
 
-export type AnimInput = { now: number; walking: boolean; dir: 1 | -1; dragging: boolean; userIdleSec: number; reactUntil: number; talkUntil: number };
+export type AnimInput = { now: number; walking: boolean; dir: 1 | -1; dragging: boolean; userIdleSec: number; reactUntil: number; talkUntil: number; mood?: 'celebrate' | 'sad' | null; moodUntil?: number };
 
 export function chooseAnimation(i: AnimInput): { anim: AnimName; paused: boolean; canWalk: boolean } {
   if (i.dragging) return { anim: 'hop', paused: false, canWalk: false };
+  if (i.mood && i.now < (i.moodUntil ?? 0)) return { anim: i.mood, paused: false, canWalk: false };
   if (i.now < i.reactUntil) return { anim: 'react', paused: false, canWalk: false };
   if (i.userIdleSec >= PAUSE_SEC) return { anim: 'sleep', paused: true, canWalk: false };
   if (i.userIdleSec >= DOZE_SEC) return { anim: 'sleep', paused: false, canWalk: false };

@@ -64,6 +64,17 @@
 }
 .privacy strong { color: var(--hood-deep); }
 
+/* Focus Bets card: points at the Pet's tray, never straight at /focus (a web-only bet can't win). */
+.bet { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 28px; align-items: center; padding: 26px 28px; rotate: -0.8deg; }
+.betCopy { display: flex; flex-direction: column; gap: 10px; }
+.betTitle { font-family: var(--font-display), system-ui, sans-serif; font-weight: 400; font-size: clamp(1.5rem, 3.5vw, 2rem); line-height: 1.1; color: var(--hood-deep); }
+.betHow strong { color: var(--hood-deep); }
+.betTable { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.betTable th { text-align: left; font: 500 0.68rem var(--font-mono), monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); padding-bottom: 6px; }
+.betTable td { padding: 8px 0; border-top: 1px dashed var(--rule); }
+.betTable td:first-child { font-family: var(--font-display), system-ui, sans-serif; color: var(--hood-deep); }
+.betTable td:last-child { font-weight: 700; color: var(--ink); }
+
 .footer { color: var(--on-sheet-soft); text-align: center; }
 
 @media (max-width: 860px) {
@@ -77,4 +88,5 @@
   .spotB { left: 0; bottom: 2%; }
   .spotC { right: 2%; bottom: 0; }
   .privacy { padding-right: 56px; }
+  .bet { grid-template-columns: 1fr; padding: 22px 20px; }
 }

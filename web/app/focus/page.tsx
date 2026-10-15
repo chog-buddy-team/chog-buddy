@@ -5,6 +5,9 @@ import { createPublicClient, createWalletClient, custom, formatUnits, http, pars
 import { monadTestnet } from '@chog/core';
 import { GOALS, STATUSES, keyHashOf, type GoalId } from '@/lib/focus';
 import { canPickGoal, estimatedBonus, keyForBet, localMidnightDeadline, minBonusFor, newProgressKey, parseSavedBets, rememberBet, type SavedBet } from '@/lib/focus-page';
+import ui from '../ui/sticker.module.css';
+import { Arrow } from '../ui/Arrow';
+import f from './focus.module.css';
 
 declare global {
   interface Window { ethereum?: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } }
@@ -255,64 +258,125 @@ export default function Focus() {
   const needed = live ? GOALS[live.goal].focusMinutes : 0;
   const bonus = amountOk ? estimatedBonus(parseUnits(amount, 18), goal, balances.pot) : 0n;
 
+  const st = live && live.status !== 'None' ? live.status : null;
+  const sprite = st === 'Won' || st === 'Claimed' ? 'chog-happy' : st === 'Lost' ? 'chog-sad' : 'chog-classic';
+  const progress = live && needed ? Math.min(100, (live.minutes / needed) * 100) : 0;
+
   return (
-    <main style={{ maxWidth: 460, margin: '48px auto', padding: '0 16px', fontFamily: 'system-ui', lineHeight: 1.5 }}>
-      <h1>Bet on your focus</h1>
-      <p>Stake test $CHOG that you&apos;ll focus. Your Chog watches. Hit the goal and win your stake plus a bonus; miss it and most of it feeds the reward pot. Testnet only, no real money.</p>
-      {!fromApp && search !== null && <p><b>Open this page from the Chog Buddy app</b> (tray menu: Bet on my focus). Your Chog reports your focus, so a bet staked here alone could never win.</p>}
-      {fromApp && !appOk && <p>Can&apos;t reach the Chog Buddy app. Keep it open, then <button onClick={pingApp}>Check again</button></p>}
+    <main className={`${ui.page} ${f.main}`}>
+      <header className={f.header}>
+        <img key={sprite} className={`${ui.cutout} ${f.chog}`} src={`/chog/${sprite}.png`} alt="" width={256} height={376} />
+        <div>
+          <h1 className={`${ui.lettering} ${f.title}`}>Bet on your focus</h1>
+          <p className={f.intro}>Stake test $CHOG that you&apos;ll focus. Your Chog watches. Hit the goal and win your stake plus a bonus; miss it and most of it feeds the reward pot. Testnet only, no real money.</p>
+        </div>
+      </header>
 
-      {!account ? (
-        <button onClick={connect} disabled={busy}>Connect wallet</button>
-      ) : (
-        <>
-          <p>
-            MON (gas): {fmt(balances.mon)} · <a href={FAUCET_URL} target="_blank" rel="noreferrer">Get testnet MON</a><br />
-            mCHOG: {fmt(balances.chog)} · <button onClick={faucet} disabled={busy}>Get 100 test $CHOG</button><br />
-            Reward pot: {fmt(balances.pot)} mCHOG
-          </p>
+      <div className={f.layout}>
+        <div className={f.flow}>
+          {!fromApp && search !== null && (
+            <p className={`${ui.sticker} ${f.notice}`}><strong>Open this page from your Chog&apos;s tray menu: Bet on my focus.</strong> Your Chog reports your focus, so a bet staked here alone could never win.</p>
+          )}
+          {fromApp && !appOk && (
+            <div className={`${ui.sticker} ${f.notice} ${f.warn}`}>
+              <p><strong>Can&apos;t reach the Chog Buddy app.</strong> Keep it open, then check again.</p>
+              <button className={ui.btnQuiet} onClick={pingApp}>Check again</button>
+            </div>
+          )}
 
-          {live && live.status !== 'None' ? (
-            <section>
-              <h2>Bet #{live.betId.toString()}: {live.status}</h2>
-              {live.status === 'Open' && <p>Focus {live.minutes} / {needed} min · {clock} left</p>}
-              {live.status === 'Open' && fromApp && hasKey && (
-                <p>
-                  {handoffFailed ? 'Could not reach the Chog Buddy app. Keep it open, then ' : 'App not reporting? '}
-                  <button onClick={resend} disabled={busy}>Send to the app again</button>
-                </p>
-              )}
-              {live.status === 'Open' && live.canRefund && <p>The server never settled this bet. <button onClick={refund} disabled={busy}>Refund my stake</button></p>}
-              {live.status === 'Won' && <p>You did it! <button onClick={claim} disabled={busy}>Claim</button></p>}
-              {live.status === 'Lost' && <p>Missed it this time. 10% was burned, 90% went to the reward pot.</p>}
-              {live.status === 'Claimed' && <p>Claimed. Nice focus.</p>}
-              {(live.status === 'Lost' || live.status === 'Claimed' || live.status === 'Refunded') && <button onClick={() => setLive(null)}>New bet</button>}
+          {!account ? (
+            <section className={`${ui.sticker} ${f.card}`}>
+              <h2 className={f.h2}>Connect to start</h2>
+              <p>Use the wallet you want to bet from. Bets run on Monad testnet with free mock tokens.</p>
+              <button className={ui.btn} onClick={connect} disabled={busy}>Connect wallet</button>
             </section>
           ) : (
-            <section>
-              <h2>New bet</h2>
-              <p>
-                {GOALS.map((g) => (
-                  <button key={g.id} onClick={() => setGoal(g.id)} disabled={!canPickGoal(g.id, new Date(now))}
-                    style={{ marginRight: 8, fontWeight: goal === g.id ? 700 : 400 }}>
-                    {g.id === 0 ? `Sprint: ${g.focusMinutes} min in 5` : `${g.name} by midnight`} (+{g.bonusBps / 100}%)
-                  </button>
-                ))}
-              </p>
-              <p>
-                Stake <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" style={{ width: 70 }} /> mCHOG (1-100)
-              </p>
-              {amountOk && <p>Win and you get your stake back plus about {fmt(bonus)} mCHOG.</p>}
-              <button onClick={stake} disabled={busy || !fromApp || !appOk || !amountOk || bonus === 0n || !canPickGoal(goal, new Date(now))}>Stake</button>
-            </section>
-          )}
-        </>
-      )}
+            <>
+              <section className={`${ui.sticker} ${f.wallet}`} aria-label="Balances">
+                <div className={f.bal}>
+                  <span className={ui.label}>MON (gas)</span>
+                  <b>{fmt(balances.mon)}</b>
+                  <a href={FAUCET_URL} target="_blank" rel="noreferrer" className={f.link}>Get testnet MON <Arrow dir="out" /></a>
+                </div>
+                <div className={f.bal}>
+                  <span className={ui.label}>mCHOG</span>
+                  <b>{fmt(balances.chog)}</b>
+                  <button className={f.mini} onClick={faucet} disabled={busy}>Get 100 test $CHOG</button>
+                </div>
+                <div className={f.bal}>
+                  <span className={ui.label}>Reward pot</span>
+                  <b>{fmt(balances.pot)}</b>
+                  <span className={f.unit}>mCHOG</span>
+                </div>
+              </section>
 
-      {msg && <p role="status">{msg}</p>}
-      {links.length > 0 && (
-        <p>{links.map((l) => <span key={l.hash}><a href={tx(l.hash)} target="_blank" rel="noreferrer">{l.label} tx</a> </span>)}</p>
-      )}
+              {live && live.status !== 'None' ? (
+                <section className={`${ui.sticker} ${live.status === 'Open' ? ui.peel : ''} ${f.card}`} data-status={live.status}>
+                  <h2 className={f.h2}>{live.status === 'Open' ? 'Your Chog is counting' : live.status === 'Won' ? 'You did it!' : live.status === 'Lost' ? 'Missed it this time' : live.status === 'Claimed' ? 'Claimed. Nice focus.' : live.status}</h2>
+                  <p className={`${ui.label} ${f.code}`}>Bet #{live.betId.toString()} · {GOALS[live.goal].id === 0 ? 'Sprint' : GOALS[live.goal].name}</p>
+                  {live.status === 'Open' && (
+                    <>
+                      <div className={f.meter}>
+                        <div className={f.count}><b>{live.minutes}</b><span>/ {needed} min focus</span></div>
+                        <div className={f.clock} aria-label={`${clock} left`}>{clock}<span className={ui.label}>left</span></div>
+                      </div>
+                      <div className={f.track} role="progressbar" aria-valuemin={0} aria-valuemax={needed} aria-valuenow={live.minutes}><span style={{ '--p': progress / 100 } as React.CSSProperties} /><b className={f.trackVal}>{Math.round(progress)}%</b></div>
+                    </>
+                  )}
+                  {live.status === 'Open' && fromApp && hasKey && (
+                    <p className={f.aside}>
+                      {handoffFailed ? 'Could not reach the Chog Buddy app. Keep it open and send the bet again.' : 'App not reporting?'}
+                      <button className={f.mini} onClick={resend} disabled={busy}>Send to the app again</button>
+                    </p>
+                  )}
+                  {live.status === 'Open' && live.canRefund && <p className={f.aside}>The server never settled this bet. <button className={f.mini} onClick={refund} disabled={busy}>Refund my stake</button></p>}
+                  {live.status === 'Won' && <><p>Your stake comes back with the bonus.</p><button className={ui.btn} onClick={claim} disabled={busy}>Claim</button></>}
+                  {live.status === 'Lost' && <p>10% was burned, 90% went to the reward pot that pays future bonuses.</p>}
+                  {(live.status === 'Lost' || live.status === 'Claimed' || live.status === 'Refunded') && <button className={ui.btnQuiet} onClick={() => setLive(null)}>New bet</button>}
+                </section>
+              ) : (
+                <section className={`${ui.sticker} ${f.card}`}>
+                  <h2 className={f.h2}>New bet</h2>
+                  <div className={f.goals} role="group" aria-label="Goal">
+                    {GOALS.map((g) => (
+                      <button key={g.id} className={f.goal} aria-pressed={goal === g.id} onClick={() => setGoal(g.id)} disabled={!canPickGoal(g.id, new Date(now))}>
+                        <b>{g.id === 0 ? 'Sprint' : g.name}</b>
+                        <span>{g.id === 0 ? `${g.focusMinutes} min in 5` : 'by midnight'}</span>
+                        <span className={ui.label}>+{g.bonusBps / 100}%</span>
+                      </button>
+                    ))}
+                  </div>
+                  <label className={f.amount}>
+                    <span>Stake</span>
+                    <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" aria-describedby="amount-hint" />
+                    <span id="amount-hint" className={ui.label}>mCHOG · 1 to 100</span>
+                  </label>
+                  {amountOk && <p className={f.win}>Win and you get your stake back plus about <b>{fmt(bonus)} mCHOG</b>.</p>}
+                  <button className={ui.btn} onClick={stake} disabled={busy || !fromApp || !appOk || !amountOk || bonus === 0n || !canPickGoal(goal, new Date(now))}>Stake</button>
+                </section>
+              )}
+            </>
+          )}
+
+          {msg && <p role="status" className={f.status}>{msg}</p>}
+          {links.length > 0 && (
+            <p className={f.txs}>{links.map((l) => <a key={l.hash} href={tx(l.hash)} target="_blank" rel="noreferrer">{l.label} tx <Arrow dir="out" /></a>)}</p>
+          )}
+        </div>
+
+        <aside className={`${ui.sticker} ${f.table}`} aria-labelledby="goals-title">
+          <h2 id="goals-title" className={f.h3}>The goals</h2>
+          <table>
+            <thead><tr><th>Goal</th><th>Focus</th><th>Window</th><th>Bonus</th></tr></thead>
+            <tbody>
+              {GOALS.map((g) => (
+                <tr key={g.id}><td>{g.id === 0 ? 'Sprint' : g.name}</td><td>{g.focusMinutes} min</td><td>{g.id === 0 ? '5 min' : 'till midnight'}</td><td>+{g.bonusBps / 100}%</td></tr>
+              ))}
+            </tbody>
+          </table>
+          <p className={f.fine}>Only coding and design time counts, reported by your Chog every 30 s. Lose and 10% burns, 90% refills the reward pot.</p>
+        </aside>
+      </div>
     </main>
   );
 }
