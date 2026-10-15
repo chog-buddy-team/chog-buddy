@@ -166,7 +166,7 @@ function ensureDiary(): Promise<DiaryEntry> {
       template: pickLine(archetype, 'idle_return', lastCategory),
     });
     const entry = { day, tokenId, text: r.text };
-    if (!wipes.stale(e0)) appendDiary(userData, entry); // a wipe while it wrote: show it, never save it
+    if (!wipes.stale(e0)) { appendDiary(userData, entry); sendHistory(); } // a wipe while it wrote: show it, never save it
     return entry;
   })().finally(() => { diaryBusy = null; });
   return diaryBusy;
@@ -216,19 +216,30 @@ function relaunch() {
   app.exit(0);
 }
 
+// Live: called on load and after every saved chat turn, diary entry or clear, so an open window never goes stale.
+function sendHistory() {
+  if (!historyWin) return;
+  const userData = app.getPath('userData');
+  historyWin.webContents.send('history-data', {
+    name: meta.name,
+    messages: forToken(loadChatLog(userData, cipher), tokenId),
+    diary: loadDiary(userData).filter((e) => e.tokenId === tokenId).map(({ day, text }) => ({ day, text })).reverse(), // newest first
+  });
+}
+
 function openHistory() {
   if (process.platform === 'darwin') app.focus({ steal: true });
   if (historyWin) {
     historyWin.focus();
     return;
   }
-  const w = new BrowserWindow({ width: 380, height: 520, title: 'Chog chat history', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs') } });
+  const w = new BrowserWindow({ width: 380, height: 520, title: 'Chog chat history & diary', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs') } });
   historyWin = w;
   w.webContents.on('will-navigate', (e) => e.preventDefault());
   w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   w.on('closed', () => { historyWin = null; });
   w.loadFile(path.join(__dirname, 'history.html'))
-    .then(() => w.webContents.send('history-data', { name: meta.name, messages: forToken(loadChatLog(app.getPath('userData'), cipher), tokenId) }))
+    .then(() => sendHistory())
     .catch(() => {}); // closed before it finished loading
 }
 
@@ -609,14 +620,14 @@ async function start() {
           click: () => void showDiary().catch((e) => dialog.showErrorBox('Chog Buddy', `Could not write today's diary.\n\n${(e as Error).message}`)),
         },
         { label: 'Open Chog Park', click: () => void shell.openExternal(`${apiUrl()}/park`).catch(() => {}) },
-        { label: 'Chat history…', click: () => openHistory() },
+        { label: 'Chat history & diary…', click: () => openHistory() },
         {
           label: 'Clear chat history',
           click: () => {
             wipes.bump();
             wipeChatLog(userData);
             if (chat) chat.history = [];
-            historyWin?.close();
+            sendHistory(); // the diary tab stays useful, so keep the window open
           },
         },
         {
@@ -704,6 +715,7 @@ ipcMain.on('chat-send', async (e, text: unknown) => {
           { role: 'user', content: text.trim().slice(0, MAX_INPUT), at: Date.now(), tokenId },
           { role: 'assistant', content: r.reply, at: Date.now(), tokenId },
         ]);
+        sendHistory();
       } catch {
         console.warn('Chog Buddy: could not save chat history'); // the chat itself still works
       }
