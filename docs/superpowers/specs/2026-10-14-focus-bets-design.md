@@ -128,7 +128,7 @@ One page, served by our backend, opened by the Pet ("Bet on my focus" in the tra
 ## What Farouk's app needs to do
 
 - Tray item "Bet on my focus" opens `https://chog-buddy-api.vercel.app/focus`.
-- Receive the progress key from the page on the loopback server.
+- Loopback server answers `GET /focus?state=<state>` with 200 only for the state it put in the page URL (the page enables Stake only after this), and receives the progress key on `POST /focus {state, betId, key}`. Both need CORS for the page origin (and `Access-Control-Allow-Private-Network: true` on the preflight for Chrome).
 - While a bet is open: post progress every 30 s (coding + design minutes since stake).
 - On result: play the sprite kit's celebrate row (win) or sad row (loss).
 

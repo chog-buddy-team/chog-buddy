@@ -58,6 +58,10 @@ function saveBet(a: Address, bet: SavedBet) {
   } catch {}
 }
 
+// A link can carry any port/state, so staking waits until the app on that port answers for that state.
+const appAnswers = (port: string, state: string) =>
+  fetch(`http://127.0.0.1:${port}/focus?state=${state}`).then((r) => r.ok, () => false);
+
 type Live = { betId: bigint; status: string; minutes: number; deadline: number; goal: GoalId; canRefund: boolean };
 
 export default function Focus() {
@@ -77,6 +81,7 @@ export default function Focus() {
   const [live, setLive] = useState<Live | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [handoffFailed, setHandoffFailed] = useState(false);
+  const [appOk, setAppOk] = useState(false);
   const [hasKey, setHasKey] = useState(false);
 
   const wallet = useCallback(() => createWalletClient({ chain: monadTestnet, transport: custom(window.ethereum!) }), []);
@@ -97,6 +102,21 @@ export default function Focus() {
     const canRefund = j.status === 'Open' && (await reader.readContract({ address: POOL, abi: poolAbi, functionName: 'canRefund', args: [betId] }).catch(() => false));
     setLive({ betId, status: j.status, minutes: j.minutes, deadline: j.deadline, goal: (j.goal ?? g) as GoalId, canRefund });
   }, []);
+
+  const pingApp = useCallback(async () => {
+    const ok = await appAnswers(port, state);
+    setAppOk(ok);
+    return ok;
+  }, [port, state]);
+
+  useEffect(() => {
+    if (!fromApp) return;
+    let current = true;
+    appAnswers(port, state).then((ok) => current && setAppOk(ok));
+    return () => {
+      current = false;
+    };
+  }, [fromApp, port, state]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -176,6 +196,7 @@ export default function Focus() {
 
   const stake = () =>
     run('Sign the permit, then confirm the stake…', async () => {
+      if (!(await pingApp())) throw new Error('Could not reach the Chog Buddy app. Keep it open and try again.');
       const a = account!;
       const value = parseUnits(amount, 18);
       const key = newProgressKey();
@@ -244,6 +265,7 @@ export default function Focus() {
       <h1>Bet on your focus</h1>
       <p>Stake test $CHOG that you&apos;ll focus. Your Chog watches. Hit the goal and win your stake plus a bonus; miss it and most of it feeds the reward pot. Testnet only, no real money.</p>
       {!fromApp && search !== null && <p><b>Open this page from the Chog Buddy app</b> (tray menu: Bet on my focus). Your Chog reports your focus, so a bet staked here alone could never win.</p>}
+      {fromApp && !appOk && <p>Can&apos;t reach the Chog Buddy app. Keep it open, then <button onClick={pingApp}>Check again</button></p>}
 
       {!account ? (
         <button onClick={connect} disabled={busy}>Connect wallet</button>
@@ -286,7 +308,7 @@ export default function Focus() {
                 Stake <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" style={{ width: 70 }} /> mCHOG (1-100)
               </p>
               {amountOk && <p>Win and you get your stake back plus about {fmt(bonus)} mCHOG.</p>}
-              <button onClick={stake} disabled={busy || !fromApp || !amountOk || bonus === 0n || !canPickGoal(goal, new Date(now))}>Stake</button>
+              <button onClick={stake} disabled={busy || !fromApp || !appOk || !amountOk || bonus === 0n || !canPickGoal(goal, new Date(now))}>Stake</button>
             </section>
           )}
         </>
