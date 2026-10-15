@@ -65,9 +65,15 @@ The NFT isn't a skin on top of a generic pet. Take the Chog away and there's not
 The builds are **not code-signed** (signing certificates cost money, and this project runs on a $0 budget; see [ADR 0003](docs/adr/0003-unsigned-installers-no-web-fallback.md)). Your OS will warn you once.
 
 - **macOS** (`Chog-Buddy-<version>-arm64.dmg` for Apple Silicon, `-x64.dmg` for Intel):
-  1. Open the DMG and drag Chog Buddy to Applications.
-  2. On first launch, right-click the app and choose **Open**. On macOS 15 and later, go to System Settings, then Privacy & Security, then **Open Anyway**.
-  3. If macOS still refuses, run `xattr -dr com.apple.quarantine "/Applications/Chog Buddy.app"` once.
+  1. Open the DMG and drag **Chog Buddy** into **Applications**. Don't run it from inside the DMG.
+  2. Open it once. macOS says *"Chog Buddy" Not Opened*; click **Done**.
+  3. Go to System Settings → **Privacy & Security**, scroll to **Security**, and click **Open Anyway** next to Chog Buddy. Confirm with your password.
+
+  Or skip steps 2–3 with one Terminal command:
+  ```bash
+  xattr -dr com.apple.quarantine "/Applications/Chog Buddy.app"
+  ```
+  Right-click → Open no longer works on macOS 15 and later.
 - **Windows** (`Chog-Buddy-Setup-<version>.exe`): if SmartScreen appears, click **More info**, then **Run anyway**.
 
 The app has no Dock or taskbar button by design; the Pet and its tray icon are the whole app. It needs no screen recording or accessibility permission, because it only reads the **name** of the app in front.
