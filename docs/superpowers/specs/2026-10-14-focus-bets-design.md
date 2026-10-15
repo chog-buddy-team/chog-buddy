@@ -36,7 +36,7 @@ Stake per bet: 1 to 100 mock $CHOG. One open bet per wallet at a time.
 
 ## Money rules
 
-- **Win:** stake back + bonus (`stake * bonusBps / 10000`, capped at 1% of the free pot per bet, so a crowd of faucet wallets can't reserve the whole pot).
+- **Win:** stake back + bonus (`stake * bonusBps / 10000`, capped at 1% of the free pot per bet, so a crowd of faucet wallets can't reserve the whole pot). The bettor passes `minBonus`; the stake reverts with `BonusTooLow` if other stakes shrank the pot so the bonus fell below it (the page sends 95% of its estimate).
 - **Lose:** 10% of the stake goes to `0x000000000000000000000000000000000000dEaD` (burned), 90% goes into the reward pot.
 - **The bonus is reserved from the pot at stake time.** If the pot cannot cover it, the stake reverts with `PotTooLow`. A settled win can therefore always be paid in full.
 - On a loss or refund the reserved bonus is released back to the pot.
@@ -66,7 +66,7 @@ plus:   bytes32 progressKeyHash   (fingerprint of the app's private progress key
 Status: `Open`, `Won`, `Lost`, `Claimed`, `Refunded`.
 
 Functions:
-- `stakeWithPermit(goal, amount, deadline, progressKeyHash, permitDeadline, v, r, s) returns (betId)`: the permit and the transfer happen in one transaction (one transaction, two wallet prompts: sign permit, send tx). `stake(...)` without permit is also provided for wallets that already approved.
+- `stakeWithPermit(goal, amount, deadline, progressKeyHash, minBonus, permitDeadline, v, r, s) returns (betId)`: the permit and the transfer happen in one transaction (one transaction, two wallet prompts: sign permit, send tx). `stake(...)` without permit is also provided for wallets that already approved.
 - `settle(betId, won)`: settler only, bet must be `Open`. A win only after `start + goal minutes` (so a server bug can't pay early), including a late report inside the grace period. A loss only after the deadline.
 - `claim(betId)`: bettor only, bet must be `Won`. Pays stake + bonus.
 - `refund(betId)`: bettor only, bet `Open` and `block.timestamp > deadline + 2 days`. Returns the stake.
@@ -95,18 +95,21 @@ The app, not the server, measures focus (it already tallies activity locally).
 
 Nobody else can report progress for your bet (they don't have the key), and this does not require owning a Chog, so judges in Judge Mode can bet.
 
-The server bounds every report by real time: total minutes never exceed the exact time since the stake, and new minutes never exceed the time since the last accepted report, so one forged report at the end can't win.
+The server bounds every report by real time:
+- Total minutes never exceed the time from the stake to now, or to the deadline. Time after the deadline never counts; the grace period is only for late uploads of focus done before it.
+- Each minute needs credit. Credit builds one minute per real minute from the stake, up to 2 minutes, and a report spends only the minutes it adds. A bigger jump is clamped to the credit (not rejected), so a Pet that was offline catches up. One forged report at the end gains 2 minutes, so a win needs reports through the whole bet.
+- Report times come from the app server's clock only.
 
-**Residual risk (accepted, from the 2026-10-15 audit):** progress is still self-reported. Someone who holds their own key and posts a fake report on time every 30 s wins every bet. Fixing this needs trusted hardware or a trusted measurer, which we don't have. Damage is bounded: mock tokens only, 100 per stake, bonus at most 1% of the free pot per bet. Labeled as such in the README.
+**Residual risk (accepted, from the 2026-10-15 audits):** progress is still self-reported. Someone who holds their own key and runs a script that posts on time through the whole bet wins every bet. Fixing this needs trusted hardware or a trusted measurer, which we don't have. Damage is bounded: mock tokens only, 100 per stake, bonus at most 1% of the free pot per bet. Labeled as such in the README.
 
 ## Backend (`web/`)
 
 - `POST /api/focus/progress`: as above. 400 on bad input or more focus than time allows, 403 on wrong key, 409 if the bet is not open or past deadline + grace. Rate limit: one accepted report per bet per 20s (429).
 - `POST /api/focus/check { betId }`: anyone may call. If the bet is open, the deadline + grace has passed and the goal was not reached, the server calls `settle(betId, false)`. Returns the bet's current status. The bet page calls it when the timer ends, so a lost sprint shows its result within seconds. Grace: 2 min for sprints, 15 min for hour goals (late uploads).
-- Daily cron: also sweeps open bets past deadline + grace and settles them lost. It runs on a time budget (what is left of 50 s) and saves a cursor, so it never hits the 60 s limit.
+- Daily cron: also sweeps open bets past deadline + grace and settles them lost. It runs next to the Soul job (different wallets), on a 30 s budget, waits at most 15 s for each settle receipt, and saves a cursor, so it never hits the 60 s limit. A failed read or settle skips that bet until the next run.
 - Only one settle transaction per bet is in flight at a time (`focus_settling` lock, taken over after 2 minutes), so parallel `check` calls can't burn settler gas. A reverted settle counts as a failure.
 - `GET /focus`: the bet page (below).
-- Tables `focus_reports`, `focus_sweep_cursor`, `focus_settling`, all keyed by the pool address, so a redeployed pool never sees an old pool's rows. Bet details are read from chain, never duplicated.
+- Tables `focus_reports` (minutes, credited_at, reported_at), `focus_sweep_cursor`, `focus_settling`, all keyed by the pool address, so a redeployed pool never sees an old pool's rows. Bet details are read from chain, never duplicated.
 - New settler wallet `chog-settler` (testnet only), separate from the Soul writer so one leaked key cannot touch the other contract. Key in a Vercel Sensitive env var `SETTLER_KEY`, as approved for the writer.
 - Env: `FOCUS_POOL`, `MOCK_CHOG`, `SETTLER_KEY`.
 
@@ -116,7 +119,7 @@ One page, served by our backend, opened by the Pet ("Bet on my focus" in the tra
 - Connect wallet (injected wallet via viem), switch to Monad testnet.
 - Shows MON balance with the faucet link, mCHOG balance with "Get 100 test $CHOG", and the pot size.
 - Pick goal + amount, see the expected bonus, then stake (permit signature + transaction). Staking only works when the page was opened from the app, since only the app can report focus.
-- The progress key is kept in this browser, so the page can send it to the app again and can find a Won bet for Claim later.
+- The progress key is saved in this browser **before** the stake is sent (matched to the bet later by its onchain hash), so a failed receipt wait or a closed tab can't lose it. The page can send it to the app again at any time and can find a Won bet for Claim later. The bet id comes from the `Staked` event.
 - A Refund button shows when `canRefund` is true.
 - Live status: countdown, focus minutes from the server, then "You won! Claim" or "Missed it".
 - Every transaction links to MonadVision.
