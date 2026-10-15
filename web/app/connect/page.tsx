@@ -3,6 +3,8 @@
 import { useState, useSyncExternalStore } from 'react';
 import { createWalletClient, custom, getAddress } from 'viem';
 import { createSiweMessage } from 'viem/siwe';
+import ui from '../ui/sticker.module.css';
+import c from './connect.module.css';
 
 declare global {
   interface Window { ethereum?: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } }
@@ -15,7 +17,7 @@ const serverSearch = () => null;
 const offline = (): never => { throw new Error('Could not reach Chog Buddy. Check your internet and try again.'); };
 
 export default function Connect() {
-  const [status, setStatus] = useState('Connect the wallet that holds your Chog.');
+  const [status, setStatus] = useState('');
   const [phase, setPhase] = useState<'idle' | 'busy' | 'done'>('idle');
   const search = useSyncExternalStore<string | null>(noSubscribe, clientSearch, serverSearch);
   const q = new URLSearchParams(search ?? '');
@@ -57,11 +59,36 @@ export default function Connect() {
     }
   }
 
+  const ready = search !== null;
+  const done = phase === 'done';
   return (
-    <main style={{ maxWidth: 420, margin: '80px auto', fontFamily: 'system-ui', textAlign: 'center' }}>
-      <h1>Chog Buddy</h1>
-      <p role="status">{search === null ? 'Loading…' : valid ? status : 'Open this page from the Chog Buddy app.'}</p>
-      {valid && phase !== 'done' && <button onClick={signIn} disabled={phase === 'busy'} style={{ padding: '10px 20px', fontSize: 16 }}>Connect wallet</button>}
+    <main className={`${ui.page} ${c.main}`}>
+      <section className={`${ui.sticker} ${done ? '' : ui.peel} ${c.card}`} data-phase={phase} aria-labelledby="connect-title">
+        <img className={`${ui.cutout} ${c.chog}`} src={done ? '/chog/chog-happy.png' : '/chog/chog-classic.png'} alt="" width={256} height={376} />
+        <h1 id="connect-title" className={`${ui.lettering} ${c.title}`}>{done ? 'Stuck!' : 'Peel your Chog onto your desktop'}</h1>
+        {!ready ? (
+          <p role="status" className={c.status}>Loading…</p>
+        ) : !valid ? (
+          <p role="status" className={c.status}>Open this page from the Chog Buddy app: tray, then Sign in with wallet.</p>
+        ) : (
+          <>
+            {!done && (
+              <ol className={c.steps}>
+                <li><span className={ui.label}>1</span>Connect the wallet that holds your Chog.</li>
+                <li><span className={ui.label}>2</span>Sign a free message. No gas, no transaction.</li>
+                <li><span className={ui.label}>3</span>Head back to your desktop. Your Chog wakes up.</li>
+              </ol>
+            )}
+            <p role="status" className={c.status}>{status}</p>
+            {!done && (
+              <button className={ui.btn} onClick={signIn} disabled={phase === 'busy'}>
+                {phase === 'busy' ? 'Waiting for your wallet…' : 'Connect wallet'}
+              </button>
+            )}
+          </>
+        )}
+      </section>
+      <p className={`${ui.sticker} ${c.note}`}><strong>Private by default.</strong> Sign-in only proves you hold the Chog. Your diary and chats stay on your computer.</p>
     </main>
   );
 }

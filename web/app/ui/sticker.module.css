@@ -1,0 +1,91 @@
+/* Shared sticker-sheet primitives for every page. */
+
+.page {
+  width: 100%;
+  padding: 40px max(16px, calc((100% - 1120px) / 2)) 72px;
+}
+
+/* Fat rounded lettering, printed in ink with a white kiss-cut outline around each glyph. */
+.lettering {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 400;
+  line-height: 0.95;
+  letter-spacing: -0.01em;
+  color: var(--letter);
+  -webkit-text-stroke: 0.16em var(--vinyl);
+  paint-order: stroke fill;
+  text-shadow: 0 0.09em 0.12em rgb(20 8 40 / 0.35);
+  text-wrap: balance;
+}
+
+/* A die-cut sticker: white vinyl border, soft lift off the sheet. */
+.sticker {
+  position: relative;
+  background: var(--vinyl);
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 12px;
+  box-shadow: var(--lift);
+}
+
+/* The lifted corner: backing sheet showing through, with the curled flap above it. */
+.peel::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 46px;
+  height: 46px;
+  border-bottom-right-radius: var(--radius);
+  background:
+    linear-gradient(315deg, var(--sheet) 0 48%, transparent 49%),
+    linear-gradient(135deg, #ffffff 0 30%, #e9e2f5 52%, #cfc4e6 58%, transparent 59%);
+  filter: drop-shadow(-3px -3px 4px rgb(20 8 40 / 0.25));
+  transform-origin: bottom right;
+  transition: transform 0.5s var(--ease);
+}
+
+/* Sprite cut out with a thick white border that follows the pixels. */
+.cutout {
+  image-rendering: pixelated;
+  filter:
+    drop-shadow(5px 0 0 var(--vinyl)) drop-shadow(-5px 0 0 var(--vinyl))
+    drop-shadow(0 5px 0 var(--vinyl)) drop-shadow(0 -5px 0 var(--vinyl))
+    drop-shadow(0 16px 18px rgb(20 8 40 / 0.45));
+}
+
+/* Sticker-sheet print code: small mono caps. */
+.label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Buttons are stickers too: pink vinyl for the primary action, white for the rest. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 24px;
+  border: 4px solid var(--vinyl);
+  border-radius: 999px;
+  background: var(--pink);
+  color: var(--ink);
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 1.15rem;
+  text-decoration: none;
+  box-shadow: var(--lift);
+  cursor: pointer;
+  transition: transform 0.35s var(--ease), box-shadow 0.35s var(--ease);
+}
+.btn:hover { transform: translateY(-2px) rotate(-1deg); box-shadow: var(--lift-hover); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { cursor: progress; opacity: 0.75; transform: none; }
+
+.btnQuiet {
+  composes: btn;
+  background: var(--vinyl);
+}
