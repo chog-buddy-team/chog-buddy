@@ -51,3 +51,43 @@ describe('ical', () => {
     expect(nextMeetingWithin([start], start + 60_000, 5 * 60_000, new Set())).toBeNull();
   });
 });
+
+const ev = (...lines: string[]) => ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', ...lines, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+const now = Date.UTC(2026, 9, 15, 8, 0, 0); // Thu 2026-10-15 08:00Z
+
+describe('ical recurrence', () => {
+  it('expands a weekly standup created months ago', () => {
+    const s = parseIcsStarts(ev('DTSTART:20260105T090000Z', 'RRULE:FREQ=WEEKLY;BYDAY=MO,TH'), now); // started on a Monday
+    expect(s).toContain(Date.UTC(2026, 9, 15, 9, 0, 0)); // Thu today
+    expect(s).not.toContain(Date.UTC(2026, 9, 16, 9, 0, 0)); // Friday is not in BYDAY
+  });
+  it('expands daily with interval', () => {
+    const s = parseIcsStarts(ev('DTSTART:20261013T100000Z', 'RRULE:FREQ=DAILY;INTERVAL=2'), now);
+    expect(s).toContain(Date.UTC(2026, 9, 15, 10, 0, 0));
+    expect(s).not.toContain(Date.UTC(2026, 9, 16, 10, 0, 0));
+  });
+  it('respects UNTIL, COUNT and EXDATE', () => {
+    expect(parseIcsStarts(ev('DTSTART:20261001T090000Z', 'RRULE:FREQ=DAILY;UNTIL=20261010T000000Z'), now).filter((t) => t > now)).toEqual([]);
+    expect(parseIcsStarts(ev('DTSTART:20261001T090000Z', 'RRULE:FREQ=DAILY;COUNT=3'), now).filter((t) => t > now)).toEqual([]);
+    const s = parseIcsStarts(ev('DTSTART:20261001T090000Z', 'RRULE:FREQ=DAILY', 'EXDATE:20261013T090000Z,20261015T090000Z'), now);
+    expect(s).not.toContain(Date.UTC(2026, 9, 15, 9, 0, 0)); // cancelled
+    expect(s).toContain(Date.UTC(2026, 9, 16, 9, 0, 0)); // next one still warns
+  });
+  it('unsupported FREQ keeps just DTSTART and never throws', () => {
+    expect(parseIcsStarts(ev('DTSTART:20261020T090000Z', 'RRULE:FREQ=MONTHLY;BYSETPOS=-1'), now)).toEqual([Date.UTC(2026, 9, 20, 9, 0, 0)]);
+    expect(() => parseIcsStarts(ev('DTSTART:20261001T090000Z', 'RRULE:FREQ=DAILY;INTERVAL=0'), now)).not.toThrow();
+  });
+});
+
+describe('ical recurrence in local time', () => {
+  it('keeps a local 09:00 weekly meeting at 09:00 across DST, and expands a years-old series', () => {
+    const tz = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      const s = parseIcsStarts(ev('DTSTART;TZID=America/New_York:20230105T090000', 'RRULE:FREQ=WEEKLY;BYDAY=TH'), now); // winter, 3+ years ago
+      expect(s).toContain(new Date(2026, 9, 15, 9, 0, 0).getTime()); // summer time, still 09:00 local
+    } finally {
+      if (tz === undefined) delete process.env.TZ; else process.env.TZ = tz;
+    }
+  });
+});
