@@ -85,4 +85,16 @@ describe('settings store', () => {
       expect(loadSettings(dir).focusBet).toBeNull();
     }
   });
+  it('a saved focusBet nulls an invalid deadline, goal or goalMinutes', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    const base = { betId: '3', keyEnc: 'k', focusMs: 0 };
+    const load = (extra: object) => {
+      writeFileSync(join(dir, 'settings.json'), JSON.stringify({ focusBet: { ...base, ...extra } }));
+      return loadSettings(dir).focusBet;
+    };
+    expect(load({ deadline: 5, goal: 2, goalMinutes: 240 })).toMatchObject({ deadline: 5, goal: 2, goalMinutes: 240 });
+    expect(load({ deadline: 'x', goal: 4, goalMinutes: 0 })).toMatchObject({ deadline: null, goal: null, goalMinutes: null });
+    expect(load({ deadline: null, goal: 1.5, goalMinutes: 2.5 })).toMatchObject({ deadline: null, goal: null, goalMinutes: null });
+    expect(load({ deadline: 5, goal: -1, goalMinutes: -3 })).toMatchObject({ deadline: 5, goal: null, goalMinutes: null });
+  });
 });

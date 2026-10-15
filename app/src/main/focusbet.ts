@@ -12,17 +12,25 @@ export type FocusBet = { betId: string; keyEnc: string; focusMs: number; started
 
 export const focusMinutes = (b: { focusMs: number }) => Math.floor(b.focusMs / 60_000);
 
+// What we report: never more than the wall clock allows since the stake (and not past the deadline), so the counter cannot run ahead of the server's clock.
+export const reportMinutes = (b: { focusMs: number; startedAt: number; deadline: number | null }, nowMs: number) =>
+  Math.max(0, Math.min(focusMinutes(b), Math.floor((Math.min(nowMs, b.deadline ?? Infinity) - b.startedAt) / 60_000)));
+
 // Only coding and design count; the daily totals are never used (they reset at midnight and predate the stake).
 export function addFocusSample(b: FocusBet, category: Category, ms: number): FocusBet {
   return category === 'coding' || category === 'design' ? { ...b, focusMs: b.focusMs + ms } : b;
 }
 
+// The server's chain read can lag the stake receipt; 2 min matches the server's banked credit (MAX_CREDIT_MINUTES).
+export const NEW_BET_GRACE_MS = 120_000;
+
 export type ProgressOutcome = 'continue' | 'won' | 'stop' | 'check';
 
 // docs/focus-bets-for-farouk.md section 5. Status 0 = network error.
-export function decideReport(status: number, body: { status?: string; error?: string }): ProgressOutcome {
+export function decideReport(status: number, body: { status?: string; error?: string }, ageMs: number): ProgressOutcome {
   if (status === 200) return body.status === 'Open' ? 'continue' : body.status === 'Won' ? 'won' : 'check';
-  if (status === 403 || status === 404) return 'stop';
+  if (status === 404) return ageMs < NEW_BET_GRACE_MS ? 'continue' : 'stop';
+  if (status === 403) return 'stop';
   if (status === 409) return 'check';
   return 'continue'; // 400 (logged by the caller), 429, network, 5xx
 }
@@ -38,7 +46,6 @@ export function focusStatusLine(b: FocusBet, nowMs: number): string {
 
 const ORIGINS = new Set(['https://chogbuddy.vercel.app', 'https://chog-buddy-api.vercel.app', 'http://localhost:3000']);
 const MAX_BODY = 10_000;
-const REPEAT_GRACE_MS = 5_000; // the page may "Send to the app again" right after the first POST
 
 // The bet page hands { betId, key } to the app here. Modelled on signin.ts; contract in web/scripts/fake-pet.mjs.
 export function startFocusLoopback(opts: {
@@ -70,6 +77,7 @@ export function startFocusLoopback(opts: {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     if (url.pathname !== '/focus') return void res.writeHead(404).end();
     if (req.method === 'OPTIONS') return void res.writeHead(204).end();
+    if (req.headers.origin && !ORIGINS.has(req.headers.origin)) return void res.writeHead(403).end();
     if (req.method === 'GET') return void res.writeHead(url.searchParams.get('state') === state ? 200 : 403).end();
     if (req.method !== 'POST') return void res.writeHead(405).end();
 
@@ -96,7 +104,7 @@ export function startFocusLoopback(opts: {
       if (!body || typeof body !== 'object') return void res.writeHead(400).end();
       if (body.state !== state) return void res.writeHead(403).end();
       const { betId, key } = body;
-      if (typeof betId !== 'string' || !/^\d+$/.test(betId) || typeof key !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(key)) return void res.writeHead(400).end();
+      if (typeof betId !== 'string' || !/^[1-9]\d*$/.test(betId) || typeof key !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(key)) return void res.writeHead(400).end();
       if (betId === accepted) return void res.writeHead(200).end(); // "Send to the app again": no-op
       let r: 'ok' | 'busy';
       try {
@@ -107,8 +115,7 @@ export function startFocusLoopback(opts: {
       if (r === 'busy') return void res.writeHead(409).end();
       accepted = betId;
       res.writeHead(200).end();
-      clearTimeout(timer);
-      timer = setTimeout(close, REPEAT_GRACE_MS);
+      clearTimeout(timer); // stays up (so "Send to the app again" works) until the caller closes it when the bet ends
     });
   });
   server.requestTimeout = 10_000;

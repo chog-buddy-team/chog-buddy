@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addFocusSample, decideReport, focusMinutes, focusStatusLine, startFocusLoopback, type FocusBet } from '../src/main/focusbet';
+import { addFocusSample, decideReport, focusMinutes, focusStatusLine, NEW_BET_GRACE_MS, reportMinutes, startFocusLoopback, type FocusBet } from '../src/main/focusbet';
 
 const SITE = 'https://chogbuddy.vercel.app';
 const KEY = '0x' + 'ab'.repeat(32);
@@ -59,6 +59,7 @@ describe('startFocusLoopback', () => {
     const s = await begin();
     expect((await s.post({ state: s.state, betId: '7', key: '0x1234' })).status).toBe(400);
     expect((await s.post({ state: s.state, betId: '7a', key: KEY })).status).toBe(400);
+    expect((await s.post({ state: s.state, betId: '0', key: KEY })).status).toBe(400);
     expect((await s.post({ state: s.state, betId: 7, key: KEY })).status).toBe(400);
     expect((await s.post('not json')).status).toBe(400);
     expect((await s.post('null')).status).toBe(400);
@@ -81,6 +82,27 @@ describe('startFocusLoopback', () => {
     expect((await s.post({ state: 'x'.repeat(10_001), betId: '7', key: KEY })).status).toBe(413);
     s.close();
   });
+  it('403 for a disallowed Origin on GET and POST; no Origin is fine', async () => {
+    const s = await begin();
+    const evil = { origin: 'https://evil.example' };
+    expect((await s.post({ state: s.state, betId: '7', key: KEY }, evil)).status).toBe(403);
+    expect((await fetch(`${s.url}?state=${s.state}`, { headers: evil })).status).toBe(403);
+    expect(s.calls).toEqual([]);
+    expect((await fetch(`${s.url}?state=${s.state}`)).status).toBe(200);
+    s.close();
+  });
+  it('stays up after accepting a key until closed', async () => {
+    let closed = false;
+    const s = await startFocusLoopback({ onBet: () => 'ok', onClose: () => { closed = true; } });
+    const body = JSON.stringify({ state: s.state, betId: '7', key: KEY });
+    const post = () => fetch(`http://127.0.0.1:${s.port}/focus`, { method: 'POST', headers: { 'content-type': 'application/json', origin: SITE }, body });
+    expect((await post()).status).toBe(200);
+    await new Promise((r) => setTimeout(r, 5_300));
+    expect(closed).toBe(false);
+    expect((await post()).status).toBe(200);
+    s.close();
+    expect(closed).toBe(true);
+  }, 10_000);
   it('404 for another path, 405 for another method', async () => {
     const s = await begin();
     expect((await fetch(`http://127.0.0.1:${s.port}/callback`)).status).toBe(404);
@@ -126,13 +148,32 @@ describe('decideReport', () => {
     [400, { error: 'focusMinutes must be a non-negative integer' }, 'continue'],
     [403, { error: 'wrong progress key' }, 'stop'],
     [404, { error: 'no such bet' }, 'stop'],
+    [404, { error: 'no such bet' }, 'continue', 0],
+    [404, { error: 'no such bet' }, 'continue', NEW_BET_GRACE_MS - 1],
+    [404, { error: 'no such bet' }, 'stop', NEW_BET_GRACE_MS],
     [409, { error: 'bet is Lost' }, 'check'],
     [429, { error: 'too many reports, wait 20 seconds' }, 'continue'],
     [0, {}, 'continue'],
     [500, {}, 'continue'],
     [503, {}, 'continue'],
-  ] as const)('%i %j -> %s', (status, body, out) => {
-    expect(decideReport(status, body)).toBe(out);
+  ] as const)('%i %j -> %s (age %i)', (status, body, out, age = 10 * NEW_BET_GRACE_MS) => {
+    expect(decideReport(status, body, age)).toBe(out);
+  });
+});
+
+describe('reportMinutes', () => {
+  const mins = (n: number) => n * 60_000;
+  it('is the counter when the clock allows it', () => {
+    expect(reportMinutes({ focusMs: mins(5), startedAt: 0, deadline: null }, mins(10))).toBe(5);
+  });
+  it('never runs ahead of the clock since the stake', () => {
+    expect(reportMinutes({ focusMs: mins(5), startedAt: 0, deadline: null }, mins(3) + 59_999)).toBe(3);
+  });
+  it('stops growing at the deadline', () => {
+    expect(reportMinutes({ focusMs: mins(50), startedAt: 0, deadline: mins(20) }, mins(40))).toBe(20);
+  });
+  it('is never negative', () => {
+    expect(reportMinutes({ focusMs: mins(5), startedAt: mins(10), deadline: null }, mins(5))).toBe(0);
   });
 });
 

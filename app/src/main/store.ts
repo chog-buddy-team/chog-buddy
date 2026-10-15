@@ -28,7 +28,11 @@ const CHAT_DEFAULTS: ChatPrefs = { provider: 'auto', ollamaModel: 'llama3.2', ge
 const plainObject = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
 const savedBet = (v: unknown): FocusBet | null => {
   const b = plainObject(v) as Partial<FocusBet>;
-  return typeof b.betId === 'string' && typeof b.keyEnc === 'string' && Number.isFinite(b.focusMs) ? (b as FocusBet) : null;
+  if (typeof b.betId !== 'string' || typeof b.keyEnc !== 'string' || !Number.isFinite(b.focusMs)) return null;
+  const goalOk = b.goal === 0 || b.goal === 1 || b.goal === 2 || b.goal === 3;
+  const deadlineOk = typeof b.deadline === 'number' && Number.isFinite(b.deadline);
+  const minutesOk = typeof b.goalMinutes === 'number' && Number.isInteger(b.goalMinutes) && b.goalMinutes > 0;
+  return { ...(b as FocusBet), deadline: deadlineOk ? b.deadline! : null, goal: goalOk ? b.goal! : null, goalMinutes: minutesOk ? b.goalMinutes! : null };
 };
 
 export function loadSettings(dir: string): Settings {

@@ -26,7 +26,7 @@ import { createServerChat } from './llm/server';
 import { ChatSession, HISTORY_CAP, MAX_INPUT, pickProvider } from './llm/session';
 import { petdexFolderName, petdexManifest } from './petdex';
 import { createWipeGuard } from './wipe';
-import { addFocusSample, decideReport, focusMinutes, focusStatusLine, GOAL_MINUTES, GRACE_MS, REPORT_EVERY_MS, startFocusLoopback } from './focusbet';
+import { addFocusSample, decideReport, focusStatusLine, GOAL_MINUTES, GRACE_MS, NEW_BET_GRACE_MS, REPORT_EVERY_MS, reportMinutes, startFocusLoopback } from './focusbet';
 
 const W = 192;
 const H = 260; // 208 sprite + room for the speech bubble
@@ -73,6 +73,8 @@ let focusServer: ReturnType<typeof startFocusLoopback> | null = null;
 let focusTimer: NodeJS.Timeout | null = null;
 let focusBusy = false; // a report or check is in flight: ticks never overlap
 let focusNeedsCheck = false; // stop reporting until /api/focus/check answers
+let lastFocusLine: string | null = null; // the status line the tray menu was last built with
+let focusKeyWarned = false; // told the user once per bet that the key is unreadable
 let focusNote: Notification | null = null; // held so its click handler is not collected
 let mood: 'celebrate' | 'sad' | null = null;
 let moodUntil = 0;
@@ -240,13 +242,29 @@ async function postFocus(path: string, payload: object): Promise<{ status: numbe
   }
 }
 
+function closeFocusServer() {
+  void focusServer?.then((s) => s.close()).catch(() => {});
+}
+
+// The tooltip follows every tick; the menu is rebuilt only when its status line changed or a bet started or ended.
+function syncFocusTray(force = false) {
+  const line = settings.focusBet ? focusStatusLine(settings.focusBet, Date.now()) : null;
+  tray?.setToolTip(line ?? 'Chog Buddy');
+  if (force || line !== lastFocusLine) {
+    lastFocusLine = line;
+    rebuildMenu?.();
+  }
+}
+
 function clearFocusBet() {
   settings.focusBet = null;
   focusNeedsCheck = false;
+  focusKeyWarned = false;
+  closeFocusServer();
   if (focusTimer) clearInterval(focusTimer);
   focusTimer = null;
   saveNow();
-  rebuildMenu?.();
+  syncFocusTray(true);
 }
 
 function finishBet(result: 'Won' | 'Lost') {
@@ -271,7 +289,12 @@ async function focusCheck() {
   if (!b) return;
   const { status, body } = await postFocus('/api/focus/check', { betId: b.betId });
   if (settings.focusBet?.betId !== b.betId) return; // cleared or replaced while it ran
-  if (status === 404) { console.warn('Chog Buddy: focus bet stopped (404)'); clearFocusBet(); return; }
+  if (status === 404) {
+    if (Date.now() - b.startedAt < NEW_BET_GRACE_MS) return; // see NEW_BET_GRACE_MS: the server may not see the stake yet
+    console.warn('Chog Buddy: focus bet stopped (404)');
+    clearFocusBet();
+    return;
+  }
   if (status !== 200) return; // network/5xx/429: the next tick asks again
   const goal = body.goal;
   if (typeof body.deadline === 'number' && (goal === 0 || goal === 1 || goal === 2 || goal === 3)) {
@@ -286,11 +309,18 @@ async function reportFocus() {
   const b = settings.focusBet;
   if (!b) return;
   const key = unseal(cipher, b.keyEnc);
-  if (!key) { console.warn('Chog Buddy: could not unseal the focus bet key'); return; }
-  const { status, body } = await postFocus('/api/focus/progress', { betId: b.betId, key, focusMinutes: focusMinutes(b) });
+  if (!key) {
+    if (!focusKeyWarned) {
+      focusKeyWarned = true;
+      console.warn('Chog Buddy: could not unseal the focus bet key');
+      showLine("I lost the key for this bet, sorry. It can't count now.");
+    }
+    return;
+  }
+  const { status, body } = await postFocus('/api/focus/progress', { betId: b.betId, key, focusMinutes: reportMinutes(b, Date.now()) });
   if (settings.focusBet?.betId !== b.betId) return;
   if (status === 400) console.warn(`Chog Buddy: focus report rejected (counter bug?): ${String(body.error ?? '').slice(0, 200)}`);
-  const out = decideReport(status, body);
+  const out = decideReport(status, body, Date.now() - b.startedAt);
   if (out === 'won') finishBet('Won');
   else if (out === 'stop') { console.warn(`Chog Buddy: focus bet stopped (${status})`); clearFocusBet(); }
   else if (out === 'check') focusNeedsCheck = true;
@@ -310,7 +340,7 @@ async function focusTick() {
     focusBusy = false;
   }
   if (settings.focusBet) saveNow();
-  rebuildMenu?.(); // refreshes the status line
+  syncFocusTray();
 }
 
 function startFocusTimer() {
@@ -328,7 +358,9 @@ function onFocusBet(b: { betId: string; key: string }): 'ok' | 'busy' {
     return 'busy';
   }
   settings.focusBet = { betId: b.betId, keyEnc, focusMs: 0, startedAt: Date.now(), deadline: null, goal: null, goalMinutes: null };
+  focusKeyWarned = false;
   startFocusTimer();
+  syncFocusTray(true);
   showLine("Bet's on! Let's focus.");
   saveNow(); // last: if it throws the page sees 500, and its resend lands on the same-betId 'ok' above
   return 'ok';
@@ -564,6 +596,7 @@ async function start() {
   let lastSave = 0;
   let diaryDay = '';
   app.on('before-quit', () => {
+    closeFocusServer();
     try {
       saveSettings(app.getPath('userData'), settings);
     } catch {
@@ -798,7 +831,7 @@ async function start() {
           click: () => {
             settings.session = null;
             settings.judgeMode = false;
-            settings.focusBet = null; // the bet belongs to that user
+            // The open focus bet is kept: Focus Bets are wallet-based, independent of the sign-in session, and dropping the key forfeits the stake.
             wipes.bump();
             wipeDiary(userData);
             wipeChatLog(userData);
