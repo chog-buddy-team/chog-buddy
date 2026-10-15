@@ -83,6 +83,7 @@ contract FocusPool is ReentrancyGuard, Ownable2Step {
     error BadDeadline();
     error AlreadyHasOpenBet();
     error PotTooLow();
+    error BonusTooLow();
     error NotSettler();
     error NotOpen();
     error TooEarly();
@@ -107,8 +108,13 @@ contract FocusPool is ReentrancyGuard, Ownable2Step {
     }
 
     /// @notice Stake on a goal. For `Sprint` the deadline argument is ignored (always 5 minutes from now).
-    function stake(Goal goal, uint96 amount, uint40 deadline, bytes32 progressKeyHash) external nonReentrant returns (uint256) {
-        return _stake(goal, amount, deadline, progressKeyHash);
+    /// @dev Reverts with BonusTooLow if other stakes shrank the free pot so the bonus fell below `minBonus`.
+    function stake(Goal goal, uint96 amount, uint40 deadline, bytes32 progressKeyHash, uint96 minBonus)
+        external
+        nonReentrant
+        returns (uint256)
+    {
+        return _stake(goal, amount, deadline, progressKeyHash, minBonus);
     }
 
     /// @notice `stake` with an EIP-2612 permit, so approve + stake is one transaction.
@@ -118,13 +124,14 @@ contract FocusPool is ReentrancyGuard, Ownable2Step {
         uint96 amount,
         uint40 deadline,
         bytes32 progressKeyHash,
+        uint96 minBonus,
         uint256 permitDeadline,
         uint8 v,
         bytes32 r,
         bytes32 s
     ) external nonReentrant returns (uint256) {
         try IERC20Permit(address(token)).permit(msg.sender, address(this), amount, permitDeadline, v, r, s) {} catch {}
-        return _stake(goal, amount, deadline, progressKeyHash);
+        return _stake(goal, amount, deadline, progressKeyHash, minBonus);
     }
 
     /// @notice Settler records the result. A win needs the goal time to have passed since the stake; a loss needs the deadline.
@@ -231,7 +238,10 @@ contract FocusPool is ReentrancyGuard, Ownable2Step {
         return block.timestamp > uint256(b.deadline) + REFUND_DELAY && block.timestamp > lastSettlerActivity + REFUND_DELAY;
     }
 
-    function _stake(Goal goal, uint96 amount, uint40 deadline, bytes32 progressKeyHash) internal returns (uint256 betId) {
+    function _stake(Goal goal, uint96 amount, uint40 deadline, bytes32 progressKeyHash, uint96 minBonus)
+        internal
+        returns (uint256 betId)
+    {
         if (amount < MIN_STAKE || amount > MAX_STAKE) revert AmountOutOfRange();
         if (openBetOf[msg.sender] != 0) revert AlreadyHasOpenBet();
         (uint16 focusMinutes, uint16 bonusBps) = goalParams(goal);
@@ -246,6 +256,7 @@ contract FocusPool is ReentrancyGuard, Ownable2Step {
         uint256 cap = available * MAX_BONUS_SHARE_BPS / 10_000;
         if (bonus > cap) bonus = cap;
         if (bonus == 0) revert PotTooLow();
+        if (bonus < minBonus) revert BonusTooLow();
 
         reserved += bonus;
         betId = nextBetId++;

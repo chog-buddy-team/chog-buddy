@@ -35,7 +35,7 @@ contract Handler is Test {
         (uint16 minutes_,) = pool.goalParams(goal);
         uint40 deadline = uint40(block.timestamp + bound(window, uint256(minutes_) * 60, 24 hours));
         vm.prank(a);
-        try pool.stake(goal, amount, deadline, keccak256(abi.encode(a, amount))) returns (uint256 id) {
+        try pool.stake(goal, amount, deadline, keccak256(abi.encode(a, amount)), 0) returns (uint256 id) {
             betIds.push(id);
         } catch {}
     }

@@ -53,7 +53,7 @@ contract FocusPoolTest is Test {
     function _stakeAs(address who, FocusPool.Goal goal, uint96 amount, uint40 deadline) internal returns (uint256) {
         vm.startPrank(who);
         token.approve(address(pool), amount);
-        uint256 id = pool.stake(goal, amount, deadline, H);
+        uint256 id = pool.stake(goal, amount, deadline, H, 0);
         vm.stopPrank();
         return id;
     }
@@ -100,7 +100,7 @@ contract FocusPoolTest is Test {
         uint256 pd = block.timestamp + 1 hours;
         (uint8 v, bytes32 r, bytes32 s) = _permitSig(10e18, pd);
         vm.prank(alice);
-        uint256 id = pool.stakeWithPermit(FocusPool.Goal.Sprint, 10e18, 0, H, pd, v, r, s);
+        uint256 id = pool.stakeWithPermit(FocusPool.Goal.Sprint, 10e18, 0, H, 0, pd, v, r, s);
         assertEq(pool.getBet(id).amount, 10e18);
         assertEq(token.balanceOf(alice), 90e18);
     }
@@ -110,7 +110,7 @@ contract FocusPoolTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = _permitSig(10e18, pd);
         token.permit(alice, address(pool), 10e18, pd, v, r, s); // someone else uses the signature first
         vm.prank(alice);
-        uint256 id = pool.stakeWithPermit(FocusPool.Goal.Sprint, 10e18, 0, H, pd, v, r, s);
+        uint256 id = pool.stakeWithPermit(FocusPool.Goal.Sprint, 10e18, 0, H, 0, pd, v, r, s);
         assertEq(pool.getBet(id).amount, 10e18);
     }
 
@@ -121,9 +121,9 @@ contract FocusPoolTest is Test {
         vm.startPrank(alice);
         token.approve(address(pool), 1e18);
         vm.expectRevert(FocusPool.BadDeadline.selector);
-        pool.stake(FocusPool.Goal.TwoHours, 1e18, t + 7199, H);
+        pool.stake(FocusPool.Goal.TwoHours, 1e18, t + 7199, H, 0);
         vm.expectRevert(FocusPool.BadDeadline.selector);
-        pool.stake(FocusPool.Goal.TwoHours, 1e18, t + 86401, H);
+        pool.stake(FocusPool.Goal.TwoHours, 1e18, t + 86401, H, 0);
         vm.stopPrank();
     }
 
@@ -132,10 +132,10 @@ contract FocusPoolTest is Test {
         vm.startPrank(alice);
         token.approve(address(pool), 1e18);
         if (offset >= 7200 && offset <= 86400) {
-            pool.stake(FocusPool.Goal.TwoHours, 1e18, uint40(block.timestamp) + offset, H);
+            pool.stake(FocusPool.Goal.TwoHours, 1e18, uint40(block.timestamp) + offset, H, 0);
         } else {
             vm.expectRevert(FocusPool.BadDeadline.selector);
-            pool.stake(FocusPool.Goal.TwoHours, 1e18, uint40(block.timestamp) + offset, H);
+            pool.stake(FocusPool.Goal.TwoHours, 1e18, uint40(block.timestamp) + offset, H, 0);
         }
         vm.stopPrank();
     }
@@ -145,9 +145,9 @@ contract FocusPoolTest is Test {
         vm.startPrank(alice);
         token.approve(address(pool), type(uint256).max);
         vm.expectRevert(FocusPool.AmountOutOfRange.selector);
-        pool.stake(FocusPool.Goal.Sprint, 1e18 - 1, 0, H);
+        pool.stake(FocusPool.Goal.Sprint, 1e18 - 1, 0, H, 0);
         vm.expectRevert(FocusPool.AmountOutOfRange.selector);
-        pool.stake(FocusPool.Goal.Sprint, 100e18 + 1, 0, H);
+        pool.stake(FocusPool.Goal.Sprint, 100e18 + 1, 0, H, 0);
         vm.stopPrank();
     }
 
@@ -163,7 +163,7 @@ contract FocusPoolTest is Test {
         vm.startPrank(alice);
         token.approve(address(pool), 1e18);
         vm.expectRevert(FocusPool.AlreadyHasOpenBet.selector);
-        pool.stake(FocusPool.Goal.Sprint, 1e18, 0, H);
+        pool.stake(FocusPool.Goal.Sprint, 1e18, 0, H, 0);
         vm.stopPrank();
     }
 
@@ -176,10 +176,21 @@ contract FocusPoolTest is Test {
         vm.stopPrank();
         vm.startPrank(alice);
         token.approve(address(small), 10e18);
-        uint256 id = small.stake(FocusPool.Goal.SixHours, 10e18, uint40(block.timestamp) + 6 hours, H);
+        uint256 id = small.stake(FocusPool.Goal.SixHours, 10e18, uint40(block.timestamp) + 6 hours, H, 0);
         vm.stopPrank();
         // nominal 5e18, but one bet may reserve at most 1% of the available pot
         assertEq(small.getBet(id).bonus, 1e16);
+    }
+
+    function test_stakeRevertsBelowMinBonus() public {
+        // Sprint 10e18 earns 5e17 from the big pot; asking for more must revert, asking for exactly that passes.
+        vm.startPrank(alice);
+        token.approve(address(pool), 10e18);
+        vm.expectRevert(FocusPool.BonusTooLow.selector);
+        pool.stake(FocusPool.Goal.Sprint, 10e18, 0, H, 5e17 + 1);
+        uint256 id = pool.stake(FocusPool.Goal.Sprint, 10e18, 0, H, 5e17);
+        vm.stopPrank();
+        assertEq(pool.getBet(id).bonus, 5e17);
     }
 
     function test_emptyPotReverts() public {
@@ -187,7 +198,7 @@ contract FocusPoolTest is Test {
         vm.startPrank(alice);
         token.approve(address(empty), 10e18);
         vm.expectRevert(FocusPool.PotTooLow.selector);
-        empty.stake(FocusPool.Goal.SixHours, 10e18, uint40(block.timestamp) + 6 hours, H);
+        empty.stake(FocusPool.Goal.SixHours, 10e18, uint40(block.timestamp) + 6 hours, H, 0);
         vm.stopPrank();
     }
 
@@ -415,7 +426,7 @@ contract FocusPoolTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = _permitSig(10e18, pd);
         vm.prank(alice);
         uint256 g = gasleft();
-        uint256 id = pool.stakeWithPermit(FocusPool.Goal.Sprint, 10e18, 0, H, pd, v, r, s);
+        uint256 id = pool.stakeWithPermit(FocusPool.Goal.Sprint, 10e18, 0, H, 0, pd, v, r, s);
         uint256 gPermit = _used(g);
 
         _passGoal(id);
@@ -431,7 +442,7 @@ contract FocusPoolTest is Test {
         token.approve(address(pool), 10e18);
         vm.prank(b);
         g = gasleft();
-        uint256 id2 = pool.stake(FocusPool.Goal.Sprint, 10e18, 0, H);
+        uint256 id2 = pool.stake(FocusPool.Goal.Sprint, 10e18, 0, H, 0);
         uint256 gStake = _used(g);
         vm.warp(pool.getBet(id2).deadline);
         vm.prank(settler);
