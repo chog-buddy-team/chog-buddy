@@ -61,8 +61,13 @@ contract Handler is Test {
         try pool.refund(id) {} catch {}
     }
 
+    function releaseBonus(uint256 seed) external {
+        if (betIds.length == 0) return;
+        try pool.releaseBonus(betIds[seed % betIds.length]) {} catch {}
+    }
+
     function warp(uint32 secs) external {
-        vm.warp(block.timestamp + bound(secs, 1, 3 days));
+        vm.warp(block.timestamp + bound(secs, 1, 40 days));
     }
 
     function betCount() external view returns (uint256) {

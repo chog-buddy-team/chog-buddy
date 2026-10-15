@@ -6,14 +6,15 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {MockChog} from "../src/MockChog.sol";
 import {FocusPool} from "../src/FocusPool.sol";
 
-/// Deploys MockChog + FocusPool, seeds the reward pot with 100,000 mCHOG. Owner = the broadcasting account.
+/// Deploys MockChog + FocusPool, seeds the reward pot with 100,000 mCHOG.
+/// OWNER_ADDRESS must be the broadcasting account (--account), so a missing sender can never pick the owner.
 contract DeployFocus is Script {
     uint256 constant SEED = 100_000e18;
 
     function run() external returns (MockChog token, FocusPool pool) {
         address settler = vm.envAddress("SETTLER_ADDRESS");
-        vm.startBroadcast();
-        address owner = msg.sender;
+        address owner = vm.envAddress("OWNER_ADDRESS");
+        vm.startBroadcast(owner);
         token = new MockChog(owner);
         pool = new FocusPool(IERC20(address(token)), settler, owner);
         token.mint(owner, SEED);

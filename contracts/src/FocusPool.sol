@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -11,6 +12,7 @@ import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 /// @title FocusPool
 /// @notice Focus Bets: stake on a focus goal, win stake + bonus from the reward pot, or lose most of it to the pot.
 /// @dev The settler (server) judges each bet; the contract never needs the server to return a stake (see `refund`).
+///      The token must be a plain 18-decimal ERC-20 with no transfer fee and no transfer restrictions.
 contract FocusPool is ReentrancyGuard, Ownable2Step {
     using SafeERC20 for IERC20;
 
@@ -48,10 +50,15 @@ contract FocusPool is ReentrancyGuard, Ownable2Step {
     uint256 public constant REFUND_DELAY = 2 days;
     uint256 public constant SPRINT_WINDOW = 5 minutes;
     uint256 public constant MAX_WINDOW = 24 hours;
+    uint256 public constant CLAIM_WINDOW = 30 days;
+    /// @notice One bet reserves at most 1% of the available pot, so no group of bets can lock all of it.
+    uint256 public constant MAX_BONUS_SHARE_BPS = 100;
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     IERC20 public immutable token;
     address public settler;
+    /// @notice Last time the settler acted; refunds open only after the settler has been silent for REFUND_DELAY.
+    uint256 public lastSettlerActivity;
 
     /// @notice Reward pot, including bonuses already reserved for open bets.
     uint256 public pot;
@@ -68,6 +75,8 @@ contract FocusPool is ReentrancyGuard, Ownable2Step {
     event Claimed(uint256 indexed betId, uint256 payout);
     event Refunded(uint256 indexed betId);
     event SettlerChanged(address settler);
+    event BonusReleased(uint256 indexed betId);
+    event Withdrawn(address indexed to, uint256 amount);
 
     error ZeroAddress();
     error AmountOutOfRange();
@@ -79,11 +88,15 @@ contract FocusPool is ReentrancyGuard, Ownable2Step {
     error TooEarly();
     error NotBettor();
     error NotWon();
+    error RenounceDisabled();
+    error UnsupportedToken();
 
     constructor(IERC20 token_, address settler_, address owner_) Ownable(owner_) {
         if (address(token_) == address(0) || settler_ == address(0)) revert ZeroAddress();
+        if (IERC20Metadata(address(token_)).decimals() != 18) revert UnsupportedToken();
         token = token_;
         settler = settler_;
+        lastSettlerActivity = block.timestamp;
     }
 
     function goalParams(Goal g) public pure returns (uint16 focusMinutes, uint16 bonusBps) {
@@ -114,14 +127,17 @@ contract FocusPool is ReentrancyGuard, Ownable2Step {
         return _stake(goal, amount, deadline, progressKeyHash);
     }
 
-    /// @notice Settler records the result. A win may be settled any time while open; a loss only once the deadline has passed.
+    /// @notice Settler records the result. A win needs the goal time to have passed since the stake; a loss needs the deadline.
     /// @dev A loss burns 10% of the stake and adds 90% to the pot; the reserved bonus is released either way.
-    function settle(uint256 betId, bool won) external {
+    function settle(uint256 betId, bool won) external nonReentrant {
         if (msg.sender != settler) revert NotSettler();
         Bet storage b = bets[betId];
         if (b.status != Status.Open) revert NotOpen();
+        lastSettlerActivity = block.timestamp;
         openBetOf[b.bettor] = 0;
         if (won) {
+            (uint16 focusMinutes,) = goalParams(b.goal);
+            if (block.timestamp < uint256(b.start) + uint256(focusMinutes) * 60) revert TooEarly();
             b.status = Status.Won;
             emit Settled(betId, true);
             return;
@@ -147,12 +163,13 @@ contract FocusPool is ReentrancyGuard, Ownable2Step {
         token.safeTransfer(msg.sender, payout);
     }
 
-    /// @notice Safety valve: take your stake back if the bet is still unsettled 2 days after its deadline.
+    /// @notice Safety valve: take your stake back when the bet is unsettled 2 days after its deadline
+    ///         and the settler has been silent for 2 days (server down). A busy settler never opens it.
     function refund(uint256 betId) external nonReentrant {
         Bet storage b = bets[betId];
         if (b.bettor != msg.sender) revert NotBettor();
         if (b.status != Status.Open) revert NotOpen();
-        if (block.timestamp <= uint256(b.deadline) + REFUND_DELAY) revert TooEarly();
+        if (!_refundOpen(b)) revert TooEarly();
         b.status = Status.Refunded;
         openBetOf[msg.sender] = 0;
         reserved -= b.bonus;
@@ -163,10 +180,35 @@ contract FocusPool is ReentrancyGuard, Ownable2Step {
     function setSettler(address s) external onlyOwner {
         if (s == address(0)) revert ZeroAddress();
         settler = s;
+        lastSettlerActivity = block.timestamp;
         emit SettlerChanged(s);
     }
 
-    function fund(uint256 amount) external {
+    /// @notice After CLAIM_WINDOW, anyone can return an unclaimed win's bonus to the pot; the winner keeps the stake.
+    function releaseBonus(uint256 betId) external {
+        Bet storage b = bets[betId];
+        if (b.status != Status.Won) revert NotWon();
+        if (block.timestamp <= uint256(b.deadline) + CLAIM_WINDOW) revert TooEarly();
+        reserved -= b.bonus;
+        b.bonus = 0;
+        emit BonusReleased(betId);
+    }
+
+    /// @notice Owner takes unreserved pot tokens out (e.g. to move to a new pool). Stakes and reserved bonuses stay.
+    function withdrawUnreserved(address to, uint256 amount) external onlyOwner nonReentrant {
+        if (to == address(0)) revert ZeroAddress();
+        if (amount > pot - reserved) revert AmountOutOfRange();
+        pot -= amount;
+        emit Withdrawn(to, amount);
+        token.safeTransfer(to, amount);
+    }
+
+    /// @dev Without an owner nobody could replace a leaked settler key.
+    function renounceOwnership() public pure override {
+        revert RenounceDisabled();
+    }
+
+    function fund(uint256 amount) external nonReentrant {
         pot += amount;
         emit Funded(msg.sender, amount);
         token.safeTransferFrom(msg.sender, address(this), amount);
@@ -180,6 +222,15 @@ contract FocusPool is ReentrancyGuard, Ownable2Step {
         return bets[betId];
     }
 
+    function canRefund(uint256 betId) external view returns (bool) {
+        Bet storage b = bets[betId];
+        return b.status == Status.Open && _refundOpen(b);
+    }
+
+    function _refundOpen(Bet storage b) internal view returns (bool) {
+        return block.timestamp > uint256(b.deadline) + REFUND_DELAY && block.timestamp > lastSettlerActivity + REFUND_DELAY;
+    }
+
     function _stake(Goal goal, uint96 amount, uint40 deadline, bytes32 progressKeyHash) internal returns (uint256 betId) {
         if (amount < MIN_STAKE || amount > MAX_STAKE) revert AmountOutOfRange();
         if (openBetOf[msg.sender] != 0) revert AlreadyHasOpenBet();
@@ -190,14 +241,17 @@ contract FocusPool is ReentrancyGuard, Ownable2Step {
         } else if (deadline < start + uint256(focusMinutes) * 60 || deadline > start + MAX_WINDOW) {
             revert BadDeadline();
         }
-        uint96 bonus = uint96(uint256(amount) * bonusBps / 10_000);
-        if (pot - reserved < bonus) revert PotTooLow();
+        uint256 available = pot - reserved;
+        uint256 bonus = uint256(amount) * bonusBps / 10_000;
+        uint256 cap = available * MAX_BONUS_SHARE_BPS / 10_000;
+        if (bonus > cap) bonus = cap;
+        if (bonus == 0) revert PotTooLow();
 
         reserved += bonus;
         betId = nextBetId++;
         openBetOf[msg.sender] = betId;
-        bets[betId] = Bet(msg.sender, amount, start, deadline, bonus, goal, Status.Open, progressKeyHash);
-        emit Staked(betId, msg.sender, goal, amount, deadline, bonus, progressKeyHash);
+        bets[betId] = Bet(msg.sender, amount, start, deadline, uint96(bonus), goal, Status.Open, progressKeyHash);
+        emit Staked(betId, msg.sender, goal, amount, deadline, uint96(bonus), progressKeyHash);
         token.safeTransferFrom(msg.sender, address(this), amount);
     }
 }

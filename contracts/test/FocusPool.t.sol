@@ -5,6 +5,15 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {MockChog} from "../src/MockChog.sol";
 import {FocusPool} from "../src/FocusPool.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+
+contract SixDecimals is ERC20 {
+    constructor() ERC20("Six", "SIX") {}
+
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+}
 
 contract FocusPoolTest is Test {
     MockChog token;
@@ -61,6 +70,12 @@ contract FocusPoolTest is Test {
             )
         );
         (v, r, s) = vm.sign(aliceKey, keccak256(abi.encodePacked("\x19\x01", token.DOMAIN_SEPARATOR(), structHash)));
+    }
+
+    function _passGoal(uint256 id) internal {
+        FocusPool.Bet memory b = pool.getBet(id);
+        (uint16 m,) = pool.goalParams(b.goal);
+        vm.warp(uint256(b.start) + uint256(m) * 60);
     }
 
     // ---- staking ----
@@ -152,7 +167,7 @@ contract FocusPoolTest is Test {
         vm.stopPrank();
     }
 
-    function test_potTooLow() public {
+    function test_bonusCappedByPotShare() public {
         FocusPool small = new FocusPool(IERC20(address(token)), settler, owner);
         vm.startPrank(owner);
         token.mint(owner, 1e18);
@@ -161,9 +176,28 @@ contract FocusPoolTest is Test {
         vm.stopPrank();
         vm.startPrank(alice);
         token.approve(address(small), 10e18);
-        vm.expectRevert(FocusPool.PotTooLow.selector);
-        small.stake(FocusPool.Goal.SixHours, 10e18, uint40(block.timestamp) + 6 hours, H);
+        uint256 id = small.stake(FocusPool.Goal.SixHours, 10e18, uint40(block.timestamp) + 6 hours, H);
         vm.stopPrank();
+        // nominal 5e18, but one bet may reserve at most 1% of the available pot
+        assertEq(small.getBet(id).bonus, 1e16);
+    }
+
+    function test_emptyPotReverts() public {
+        FocusPool empty = new FocusPool(IERC20(address(token)), settler, owner);
+        vm.startPrank(alice);
+        token.approve(address(empty), 10e18);
+        vm.expectRevert(FocusPool.PotTooLow.selector);
+        empty.stake(FocusPool.Goal.SixHours, 10e18, uint40(block.timestamp) + 6 hours, H);
+        vm.stopPrank();
+    }
+
+    function test_sybilsCannotReserveWholePot() public {
+        for (uint256 i; i < 400; i++) {
+            _stakeAs(_fresh(string(abi.encodePacked('s', vm.toString(i)))), FocusPool.Goal.SixHours, 100e18, uint40(block.timestamp) + 24 hours);
+        }
+        assertGt(pool.potAvailable(), 0);
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        assertGt(pool.getBet(id).bonus, 0);
     }
 
     function test_fundAddsToPot() public {
@@ -205,9 +239,9 @@ contract FocusPoolTest is Test {
 
     // ---- settle / claim / refund ----
 
-    function test_winAnytimeThenClaim() public {
+    function test_winAfterGoalTimeThenClaim() public {
         uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
-        vm.warp(block.timestamp + 10);
+        _passGoal(id);
         vm.expectEmit(true, false, false, true);
         emit FocusPool.Settled(id, true);
         vm.prank(settler);
@@ -255,6 +289,7 @@ contract FocusPoolTest is Test {
 
     function test_onlyBettorClaims() public {
         uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        _passGoal(id);
         vm.prank(settler);
         pool.settle(id, true);
         vm.prank(settler);
@@ -264,6 +299,7 @@ contract FocusPoolTest is Test {
 
     function test_claimTwice() public {
         uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        _passGoal(id);
         vm.prank(settler);
         pool.settle(id, true);
         vm.startPrank(alice);
@@ -328,6 +364,7 @@ contract FocusPoolTest is Test {
 
     function test_newBetAfterSettle() public {
         uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        _passGoal(id);
         vm.prank(settler);
         pool.settle(id, true);
         uint256 id2 = _approveAndStake(FocusPool.Goal.Sprint, 1e18, 0);
@@ -365,7 +402,7 @@ contract FocusPoolTest is Test {
 
     uint256 constant BUDGET_STAKE_WITH_PERMIT = 226_000;
     uint256 constant BUDGET_STAKE = 141_000;
-    uint256 constant BUDGET_SETTLE_LOSS = 36_000;
+    uint256 constant BUDGET_SETTLE_LOSS = 40_000; // settler-paid; +reentrancy guard and lastSettlerActivity (audit fixes)
     uint256 constant BUDGET_CLAIM = 17_500;
     uint256 constant BUDGET_REFUND = 13_500;
 
@@ -381,6 +418,7 @@ contract FocusPoolTest is Test {
         uint256 id = pool.stakeWithPermit(FocusPool.Goal.Sprint, 10e18, 0, H, pd, v, r, s);
         uint256 gPermit = _used(g);
 
+        _passGoal(id);
         vm.prank(settler);
         pool.settle(id, true);
         vm.prank(alice);
@@ -419,5 +457,95 @@ contract FocusPoolTest is Test {
         assertLe(gLoss, BUDGET_SETTLE_LOSS);
         assertLe(gClaim, BUDGET_CLAIM);
         assertLe(gRefund, BUDGET_REFUND);
+    }
+
+    // ---- audit fixes ----
+
+    function test_winBeforeGoalTimeReverts() public {
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        vm.warp(uint256(pool.getBet(id).start) + 179);
+        vm.prank(settler);
+        vm.expectRevert(FocusPool.TooEarly.selector);
+        pool.settle(id, true);
+        vm.warp(uint256(pool.getBet(id).start) + 180);
+        vm.prank(settler);
+        pool.settle(id, true);
+    }
+
+    function test_refundBlockedWhileSettlerIsActive() public {
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        address bob = _fresh("bob");
+        vm.warp(pool.getBet(id).deadline + 2 days + 1);
+        // the settler is alive: it settles another bet now
+        uint256 bobId = _stakeAs(bob, FocusPool.Goal.Sprint, 1e18, 0);
+        vm.warp(block.timestamp + 300);
+        vm.prank(settler);
+        pool.settle(bobId, false);
+        assertFalse(pool.canRefund(id));
+        vm.prank(alice);
+        vm.expectRevert(FocusPool.TooEarly.selector);
+        pool.refund(id);
+        // two silent days later the settler counts as down, so the safety valve opens
+        vm.warp(block.timestamp + 2 days + 1);
+        assertTrue(pool.canRefund(id));
+        vm.prank(alice);
+        pool.refund(id);
+    }
+
+    function test_setSettlerCountsAsActivity() public {
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        vm.warp(pool.getBet(id).deadline + 2 days + 1);
+        vm.prank(owner);
+        pool.setSettler(address(0xBEEF));
+        vm.prank(alice);
+        vm.expectRevert(FocusPool.TooEarly.selector);
+        pool.refund(id);
+    }
+
+    function test_releaseUnclaimedBonus() public {
+        uint256 id = _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0);
+        _passGoal(id);
+        vm.prank(settler);
+        pool.settle(id, true);
+        vm.expectRevert(FocusPool.TooEarly.selector);
+        pool.releaseBonus(id);
+        vm.warp(pool.getBet(id).deadline + 30 days + 1);
+        pool.releaseBonus(id);
+        assertEq(pool.reserved(), 0);
+        assertEq(pool.getBet(id).bonus, 0);
+        vm.prank(alice);
+        pool.claim(id); // the stake is still the winner's
+        assertEq(token.balanceOf(alice), 100e18);
+        vm.expectRevert(FocusPool.NotWon.selector);
+        pool.releaseBonus(id);
+    }
+
+    function test_ownerWithdrawsOnlyUnreserved() public {
+        _approveAndStake(FocusPool.Goal.Sprint, 10e18, 0); // reserves 0.5e18
+        uint256 avail = pool.potAvailable();
+        vm.prank(alice);
+        vm.expectRevert();
+        pool.withdrawUnreserved(alice, 1);
+        vm.prank(owner);
+        vm.expectRevert(FocusPool.AmountOutOfRange.selector);
+        pool.withdrawUnreserved(owner, avail + 1);
+        vm.prank(owner);
+        pool.withdrawUnreserved(owner, avail);
+        assertEq(pool.potAvailable(), 0);
+        assertEq(token.balanceOf(owner), avail);
+        assertEq(token.balanceOf(address(pool)), pool.pot() + 10e18);
+    }
+
+    function test_cannotRenounceOwnership() public {
+        vm.prank(owner);
+        vm.expectRevert(FocusPool.RenounceDisabled.selector);
+        pool.renounceOwnership();
+        assertEq(pool.owner(), owner);
+    }
+
+    function test_rejectsNon18DecimalToken() public {
+        SixDecimals six = new SixDecimals();
+        vm.expectRevert(FocusPool.UnsupportedToken.selector);
+        new FocusPool(IERC20(address(six)), settler, owner);
     }
 }
