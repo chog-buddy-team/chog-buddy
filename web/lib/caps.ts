@@ -7,6 +7,7 @@ const positiveInt = (v: string | undefined, fallback: number) => {
 };
 
 // Raise these in Vercel during judging if needed; the global cap should sit just under Gemini's free daily limit.
+// The global cap protects only the Gemini quota; free backups keep answering until the per-caller cap.
 export function chatCaps(env: Record<string, string | undefined> = process.env) {
   return { perCaller: positiveInt(env.CHAT_PER_CALLER_DAILY, 200), global: positiveInt(env.CHAT_GLOBAL_DAILY, 1000) };
 }
