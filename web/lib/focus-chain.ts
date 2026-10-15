@@ -38,7 +38,8 @@ export async function settleBet(betId: bigint, won: boolean): Promise<Hex> {
   const account = privateKeyToAccount(process.env.SETTLER_KEY as Hex);
   const wallet = createWalletClient({ account, chain: monadTestnet, transport: transport() });
   const hash = await wallet.writeContract({ address: pool(), abi: focusPoolAbi, functionName: 'settle', args: [betId, won] });
-  const receipt = await reader().waitForTransactionReceipt({ hash });
+  // Monad blocks are sub-second; 15 s keeps one stuck settle from holding the sweep past its budget.
+  const receipt = await reader().waitForTransactionReceipt({ hash, timeout: 15_000 });
   if (receipt.status !== 'success') throw new Error(`settle reverted: ${hash}`);
   return hash;
 }

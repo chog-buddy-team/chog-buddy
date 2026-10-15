@@ -36,6 +36,14 @@ describe('sweepExpiredBets', () => {
     expect(r).toMatchObject({ checked: 3, settled: 2, failed: 1 });
     expect(f.cursor()).toBe(1n); // the failed bet is still open, so the next run starts there
   });
+  it('keeps going past a bet it cannot read, and retries it next run', async () => {
+    const f = fakes(99n);
+    f.deps.readBet = async (id) => { if (id === 2n) throw new Error('rpc down'); return expired(id); };
+    const r = await sweepExpiredBets((start + 1000) * 1000, f.deps);
+    expect(f.settled).toEqual([1n, 3n]);
+    expect(r).toMatchObject({ checked: 3, settled: 2, failed: 1 });
+    expect(f.cursor()).toBe(2n);
+  });
   it('stops at its time budget and saves the cursor at the first unchecked bet', async () => {
     const f = fakes(99n);
     let t = 0;

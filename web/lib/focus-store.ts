@@ -7,20 +7,23 @@ import { settleBet } from './focus-chain';
 const pool = () => (process.env.FOCUS_POOL ?? '').toLowerCase();
 
 export async function storedProgress(betId: bigint): Promise<StoredProgress | null> {
-  const [row] = await sql`select minutes, reported_at from focus_reports where pool = ${pool()} and bet_id = ${betId.toString()}`;
-  return row ? { minutes: row.minutes as number, reportedAtMs: new Date(row.reported_at as string).getTime() } : null;
+  const [row] = await sql`select minutes, credited_at from focus_reports where pool = ${pool()} and bet_id = ${betId.toString()}`;
+  return row ? { minutes: row.minutes as number, creditedAtMs: new Date(row.credited_at as string).getTime() } : null;
 }
 
 export async function storedMinutes(betId: bigint): Promise<number | null> {
   return (await storedProgress(betId))?.minutes ?? null;
 }
 
-// Returns false when the last accepted report is younger than minGapMs.
-export async function saveProgress(betId: bigint, minutes: number, minGapMs: number): Promise<boolean> {
+// Returns false when the last accepted report is younger than minGapMs. Times come from the app server's
+// clock (the same nowMs decideProgress used), never from Postgres now(), so the two can't drift apart.
+export async function saveProgress(betId: bigint, p: StoredProgress, minGapMs: number, nowMs: number): Promise<boolean> {
   const rows = await sql`
-    insert into focus_reports (pool, bet_id, minutes, reported_at) values (${pool()}, ${betId.toString()}, ${minutes}, now())
-    on conflict (pool, bet_id) do update set minutes = greatest(focus_reports.minutes, excluded.minutes), reported_at = now()
-    where focus_reports.reported_at < now() - make_interval(secs => ${minGapMs / 1000})
+    insert into focus_reports (pool, bet_id, minutes, credited_at, reported_at)
+    values (${pool()}, ${betId.toString()}, ${p.minutes}, to_timestamp(${p.creditedAtMs / 1000}), to_timestamp(${nowMs / 1000}))
+    on conflict (pool, bet_id) do update
+    set minutes = excluded.minutes, credited_at = excluded.credited_at, reported_at = excluded.reported_at
+    where focus_reports.reported_at < to_timestamp(${(nowMs - minGapMs) / 1000})
     returning minutes`;
   return rows.length > 0;
 }

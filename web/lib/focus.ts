@@ -39,28 +39,36 @@ export function parseProgressBody(x: unknown): { betId: bigint; key: Hex; focusM
 
 type Reject = { action: 'reject'; status: 400 | 403 | 409; error: string };
 
-export type StoredProgress = { minutes: number; reportedAtMs: number };
+// creditedAtMs: the time up to which focus credit has been spent (see decideProgress).
+export type StoredProgress = { minutes: number; creditedAtMs: number };
 
-// Focus is self-reported by the Pet, so the server bounds it by real time twice: never more than the
-// time since the stake, and never more new minutes than the time since the last accepted report.
-// One forged report at the end cannot win; the reporter has to keep up with the clock the whole way.
+// Most minutes of credit that can build up, so a late report gains at most this much.
+const MAX_CREDIT_MINUTES = 2;
+
+// Focus is self-reported by the Pet, so the server bounds it by real time. Never more minutes than the time
+// from the stake to now (or to the deadline). And each minute needs credit: credit builds one minute per real
+// minute from the stake, up to MAX_CREDIT_MINUTES, and a report spends only the minutes it adds. A bigger
+// jump is clamped, not rejected, so a Pet that was offline catches up; one late report gains 2 minutes, so a
+// win needs reports through the whole bet. Time after the deadline builds no credit: grace is for late uploads.
 export function decideProgress(
   bet: OnchainBet,
   report: { key: Hex; focusMinutes: number },
   stored: StoredProgress | null,
   nowMs: number,
-): Reject | { action: 'store' | 'win'; minutes: number } {
+): Reject | { action: 'store' | 'win'; minutes: number; creditedAtMs: number } {
   const goal = GOALS[bet.goal];
   if (keyHashOf(report.key).toLowerCase() !== bet.progressKeyHash.toLowerCase()) return { action: 'reject', status: 403, error: 'wrong progress key' };
   if (bet.status !== 'Open') return { action: 'reject', status: 409, error: `bet is ${bet.status}` };
   // Same boundary as decideCheck's 'lose', so a win and a loss can never both be due.
   if (nowMs >= bet.deadline * 1000 + goal.graceMs) return { action: 'reject', status: 409, error: 'bet deadline has passed' };
-  if (report.focusMinutes * 60_000 > nowMs - bet.start * 1000) return { action: 'reject', status: 400, error: 'more focus than time since the stake' };
-  if (stored && report.focusMinutes > stored.minutes + Math.ceil((nowMs - stored.reportedAtMs) / 60_000)) {
-    return { action: 'reject', status: 400, error: 'more focus than time since the last report' };
-  }
-  const minutes = Math.max(stored?.minutes ?? 0, report.focusMinutes);
-  return { action: minutes >= goal.focusMinutes ? 'win' : 'store', minutes };
+  const until = Math.min(nowMs, bet.deadline * 1000);
+  if (report.focusMinutes * 60_000 > until - bet.start * 1000) return { action: 'reject', status: 400, error: 'more focus than time since the stake' };
+  const lastMinutes = stored?.minutes ?? 0;
+  const from = Math.max(stored?.creditedAtMs ?? bet.start * 1000, until - MAX_CREDIT_MINUTES * 60_000);
+  const credit = Math.max(0, Math.floor((until - from) / 60_000));
+  const gain = Math.max(0, Math.min(report.focusMinutes - lastMinutes, credit));
+  const minutes = lastMinutes + gain;
+  return { action: minutes >= goal.focusMinutes ? 'win' : 'store', minutes, creditedAtMs: from + gain * 60_000 };
 }
 
 export function decideCheck(bet: OnchainBet, storedMinutes: number | null, nowMs: number): 'win' | 'lose' | 'wait' | 'done' {

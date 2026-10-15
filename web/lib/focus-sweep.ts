@@ -19,7 +19,7 @@ export type SweepDeps = {
 const liveDeps: SweepDeps = { nextBetId, readBet, storedMinutes, settleBet: settleOnce, clock: Date.now, getCursor, setCursor };
 
 // Settles every open bet whose time is up. Walks from the lowest bet id that was still open last run.
-// A failed settle doesn't stop the run; that bet stays open and the next run starts from it.
+// A failed read or settle doesn't stop the run; that bet stays open and the next run starts from it.
 export async function sweepExpiredBets(nowMs = Date.now(), deps: SweepDeps = liveDeps, budgetMs = BUDGET_MS): Promise<{ checked: number; settled: number; failed: number }> {
   const t0 = deps.clock();
   const from = (await deps.getCursor()) ?? 1n;
@@ -29,17 +29,18 @@ export async function sweepExpiredBets(nowMs = Date.now(), deps: SweepDeps = liv
   let settled = 0;
   let failed = 0;
   for (let id = from; id < end && deps.clock() - t0 < budgetMs; id++, checked++) {
-    const decision = decideCheck(await deps.readBet(id), await deps.storedMinutes(id), nowMs);
-    if (decision === 'win' || decision === 'lose') {
-      try {
-        await deps.settleBet(id, decision === 'win');
-        settled++;
+    try {
+      const decision = decideCheck(await deps.readBet(id), await deps.storedMinutes(id), nowMs);
+      if (decision === 'done' || decision === 'wait') {
+        if (decision === 'wait' && firstStillOpen === null) firstStillOpen = id;
         continue;
-      } catch {
-        failed++;
       }
+      await deps.settleBet(id, decision === 'win');
+      settled++;
+    } catch {
+      failed++;
+      if (firstStillOpen === null) firstStillOpen = id;
     }
-    if (decision !== 'done' && firstStillOpen === null) firstStillOpen = id;
   }
   await deps.setCursor(firstStillOpen ?? from + BigInt(checked));
   return { checked, settled, failed };

@@ -14,10 +14,11 @@ export async function POST(req: Request) {
   }
   const bet = await readBet(body.betId);
   if (bet.status === 'None') return Response.json({ error: 'no such bet' }, { status: 404 });
-  const decision = decideProgress(bet, body, await storedProgress(body.betId), Date.now());
+  const nowMs = Date.now();
+  const decision = decideProgress(bet, body, await storedProgress(body.betId), nowMs);
   if (decision.action === 'reject') return Response.json({ error: decision.error }, { status: decision.status });
 
-  if (!(await saveProgress(body.betId, decision.minutes, MIN_REPORT_GAP_MS))) return Response.json({ error: 'too many reports, wait 20 seconds' }, { status: 429 });
+  if (!(await saveProgress(body.betId, decision, MIN_REPORT_GAP_MS, nowMs))) return Response.json({ error: 'too many reports, wait 20 seconds' }, { status: 429 });
 
   if (decision.action === 'win') {
     try {

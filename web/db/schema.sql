@@ -59,9 +59,11 @@ create table if not exists focus_reports (
   pool text not null,
   bet_id bigint not null,
   minutes int not null,
+  credited_at timestamptz not null, -- focus credit spent up to here (decideProgress)
   reported_at timestamptz not null default now(),
   primary key (pool, bet_id)
 );
+alter table focus_reports add column if not exists credited_at timestamptz not null;
 
 -- Daily sweep cursor: lowest bet id that was still open last run.
 create table if not exists focus_sweep_cursor (
