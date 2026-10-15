@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import { createPublicClient, createWalletClient, custom, formatUnits, http, parseAbi, parseEventLogs, parseSignature, parseUnits, type Address, type Hex } from 'viem';
+import { createPublicClient, createWalletClient, custom, formatUnits, http, parseAbi, parseEventLogs, parseUnits, type Address, type Hex } from 'viem';
 import { monadTestnet } from '@chog/core';
 import { GOALS, STATUSES, keyHashOf, type GoalId } from '@/lib/focus';
 import { canPickGoal, estimatedBonus, keyForBet, localMidnightDeadline, minBonusFor, newProgressKey, parseSavedBets, rememberBet, type SavedBet } from '@/lib/focus-page';
@@ -18,10 +18,11 @@ const tx = (h: string) => `https://testnet.monadvision.com/tx/${h}`;
 const tokenAbi = parseAbi([
   'function faucet()',
   'function balanceOf(address) view returns (uint256)',
-  'function nonces(address) view returns (uint256)',
+  'function allowance(address owner, address spender) view returns (uint256)',
+  'function approve(address spender, uint256 value) returns (bool)',
 ]);
 const poolAbi = parseAbi([
-  'function stakeWithPermit(uint8 goal, uint96 amount, uint40 deadline, bytes32 progressKeyHash, uint96 minBonus, uint256 permitDeadline, uint8 v, bytes32 r, bytes32 s) returns (uint256)',
+  'function stake(uint8 goal, uint96 amount, uint40 deadline, bytes32 progressKeyHash, uint96 minBonus) returns (uint256)',
   'event Staked(uint256 indexed betId, address indexed bettor, uint8 goal, uint96 amount, uint40 deadline, uint96 bonus, bytes32 progressKeyHash)',
   'function claim(uint256 betId)',
   'function refund(uint256 betId)',
@@ -195,33 +196,27 @@ export default function Focus() {
     });
 
   const stake = () =>
-    run('Sign the permit, then confirm the stake…', async () => {
+    run('Approve the stake amount, then confirm the stake…', async () => {
       if (!(await pingApp())) throw new Error('Could not reach the Chog Buddy app. Keep it open and try again.');
       const a = account!;
       const value = parseUnits(amount, 18);
       const key = newProgressKey();
       const deadline = goal === 0 ? 0 : localMidnightDeadline(new Date());
-      const permitDeadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
-      const nonce = await reader.readContract({ address: TOKEN, abi: tokenAbi, functionName: 'nonces', args: [a] });
-      const sig = await wallet().signTypedData({
-        account: a,
-        domain: { name: 'Mock CHOG', version: '1', chainId: monadTestnet.id, verifyingContract: TOKEN },
-        types: { Permit: [
-          { name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }, { name: 'value', type: 'uint256' },
-          { name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' },
-        ] },
-        primaryType: 'Permit',
-        message: { owner: a, spender: POOL, value, nonce, deadline: permitDeadline },
-      });
-      const { v, r, s } = parseSignature(sig);
+      // A plain approve for exactly the stake, not a permit signature: wallets flag permit signatures as high risk.
+      const allowed = await reader.readContract({ address: TOKEN, abi: tokenAbi, functionName: 'allowance', args: [a, POOL] });
+      if (allowed < value) {
+        const approveHash = await wallet().writeContract({ account: a, address: TOKEN, abi: tokenAbi, functionName: 'approve', args: [POOL, value] });
+        setLinks((l) => [...l, { label: 'Approve', hash: approveHash }]);
+        await mined(approveHash);
+      }
       const pot = await reader.readContract({ address: POOL, abi: poolAbi, functionName: 'potAvailable' });
       const minBonus = minBonusFor(estimatedBonus(value, goal, pot));
       if (minBonus === 0n) throw new Error('The reward pot is empty right now.');
       // Saved before the tx, so a failed receipt wait or a closed tab can't lose the key; connect() finds it by hash.
       saveBet(a, { betId: '0', key });
       const hash = await wallet().writeContract({
-        account: a, address: POOL, abi: poolAbi, functionName: 'stakeWithPermit',
-        args: [goal, value, deadline, keyHashOf(key), minBonus, permitDeadline, Number(v), r, s],
+        account: a, address: POOL, abi: poolAbi, functionName: 'stake',
+        args: [goal, value, deadline, keyHashOf(key), minBonus],
       });
       setLinks((l) => [...l, { label: 'Stake', hash }]);
       const receipt = await mined(hash);
