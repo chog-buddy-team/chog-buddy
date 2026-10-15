@@ -709,7 +709,6 @@ async function start() {
   }, 60_000);
 
   tray = new Tray(nativeImage.createFromDataURL(TRAY_ICON));
-  tray.setToolTip('Chog Buddy');
   // Windows opens a tray's menu on right-click only; make a left-click open it too.
   if (process.platform === 'win32') tray.on('click', () => tray?.popUpContextMenu());
   rebuildMenu = () =>
