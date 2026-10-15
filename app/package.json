@@ -47,11 +47,25 @@
         }
       ],
       "category": "public.app-category.entertainment",
-      "identity": null
+      "identity": "-",
+      "artifactName": "Chog-Buddy-${version}-${arch}.${ext}",
+      "hardenedRuntime": false
     },
     "win": {
       "target": "nsis"
     },
-    "electronVersion": "44.7.0"
+    "electronVersion": "44.7.0",
+    "icon": "build/icon.png",
+    "publish": {
+      "provider": "github",
+      "owner": "faroukobayanju",
+      "repo": "chog-buddy",
+      "releaseType": "release"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Chog-Buddy-Setup-${version}.${ext}"
+    }
   }
 }
