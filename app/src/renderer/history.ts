@@ -50,8 +50,10 @@ function render() {
     bubble.append(text, time);
     list.append(bubble);
   }
-  window.scrollTo(0, document.body.scrollHeight);
+  if (follow) window.scrollTo(0, document.body.scrollHeight); // only when the reader was already at the bottom
 }
 
 for (const [k, b] of Object.entries(tabs)) b.addEventListener('click', () => { tab = k as keyof typeof tabs; window.scrollTo(0, 0); render(); });
+let follow = true;
+window.addEventListener('scroll', () => { follow = window.innerHeight + window.scrollY >= document.body.scrollHeight - 40; });
 window.chog.onHistory((p) => { last = p; render(); });

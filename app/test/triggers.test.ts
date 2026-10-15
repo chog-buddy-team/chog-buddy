@@ -91,3 +91,16 @@ describe('ical recurrence in local time', () => {
     }
   });
 });
+
+describe('ical recurrence edge cases (review)', () => {
+  const ev2 = (...lines: string[]) => ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', ...lines, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  const now2 = Date.UTC(2026, 9, 12, 6, 0, 0); // Mon 2026-10-12
+  it('fortnightly multi-day weeks align to Monday', () => {
+    const s = parseIcsStarts(ev2('DTSTART:20261007T090000Z', 'RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE'), now2);
+    expect(s).not.toContain(Date.UTC(2026, 9, 12, 9, 0, 0)); // skipped week
+  });
+  it('garbage UNTIL keeps only DTSTART; garbage BYDAY behaves like none', () => {
+    expect(parseIcsStarts(ev2('DTSTART:20261001T090000Z', 'RRULE:FREQ=DAILY;UNTIL=garbage'), now2)).toEqual([Date.UTC(2026, 9, 1, 9, 0, 0)]);
+    expect(parseIcsStarts(ev2('DTSTART:20261005T090000Z', 'RRULE:FREQ=WEEKLY;BYDAY=XX'), now2)).toContain(Date.UTC(2026, 9, 12, 9, 0, 0));
+  });
+});

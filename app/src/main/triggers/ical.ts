@@ -19,12 +19,15 @@ function expand(start: number, utc: boolean, rule: string, exdates: Set<number>,
   const p: Record<string, string> = Object.fromEntries(rule.split(';').map((kv) => kv.split('=') as [string, string]));
   if (p.FREQ !== 'DAILY' && p.FREQ !== 'WEEKLY') return [start];
   const interval = Math.max(1, Number(p.INTERVAL) || 1);
-  const until = p.UNTIL ? parseIcsTime(/^\d{8}$/.test(p.UNTIL) ? `${p.UNTIL}T235959` : p.UNTIL) ?? Infinity : Infinity;
+  const until = p.UNTIL ? parseIcsTime(/^\d{8}$/.test(p.UNTIL) ? `${p.UNTIL}T235959` : p.UNTIL) : Infinity;
+  if (until === null) return [start]; // unreadable UNTIL: never warn forever, keep just the first start
   const count = p.COUNT ? Number(p.COUNT) || Infinity : Infinity;
-  const days = p.FREQ === 'WEEKLY' && p.BYDAY ? p.BYDAY.split(',').map((d) => BYDAY[d.slice(-2)]).filter((d) => d !== undefined) : null;
+  const byday = p.FREQ === 'WEEKLY' && p.BYDAY ? p.BYDAY.split(',').map((d) => BYDAY[d.slice(-2)]).filter((d) => d !== undefined) : [];
+  const days = byday.length ? byday : null; // an unreadable BYDAY behaves like none (DTSTART's weekday)
   const from = now - 3600_000, to = now + 48 * 3600_000;
   const out: number[] = [];
   const first = new Date(start);
+  const weekOffset = ((utc ? first.getUTCDay() : first.getDay()) + 6) % 7; // weeks start Monday (WKST=MO) for INTERVAL>1
   // Local starts step by calendar day so a 09:00 meeting stays at 09:00 across DST; weekday follows the same clock.
   const at = (i: number) => (utc ? start + i * DAY_MS : new Date(first.getFullYear(), first.getMonth(), first.getDate() + i, first.getHours(), first.getMinutes(), first.getSeconds()).getTime());
   // Without COUNT, nothing before the window matters: jump straight to it, so a years-old series still expands.
@@ -36,7 +39,7 @@ function expand(start: number, utc: boolean, rule: string, exdates: Set<number>,
     const weekday = utc ? new Date(t).getUTCDay() : new Date(t).getDay();
     const ok = p.FREQ === 'DAILY'
       ? i % interval === 0
-      : Math.floor(i / 7) % interval === 0 && (days ? days.includes(weekday) : i % 7 === 0);
+      : Math.floor((i + weekOffset) / 7) % interval === 0 && (days ? days.includes(weekday) : i % 7 === 0);
     if (!ok) continue;
     n++;
     if (t >= from && !exdates.has(t)) out.push(t);

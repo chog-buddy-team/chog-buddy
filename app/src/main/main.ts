@@ -112,7 +112,7 @@ function closeChat() {
   win.setFocusable(false);
   win.blur();
   // ponytail: app.hide returns focus to the previous app; showInactive keeps the pet visible. Revisit if a flicker shows.
-  if (process.platform === 'darwin') { app.hide(); win.showInactive(); }
+  if (process.platform === 'darwin' && !BrowserWindow.getAllWindows().some((w) => w !== win && w.isVisible())) { app.hide(); win.showInactive(); }
   win.webContents.send('chat-closed');
 }
 
@@ -179,8 +179,10 @@ async function showDiary() {
   try {
     entry = await ensureDiary();
   } catch (e) {
-    win?.webContents.send('chat-replace', '📔 I could not write my diary.'); // don't leave "Writing…" up forever
-    win?.webContents.send('chat-done', { failed: true });
+    if (!inFlightChat) {
+      win?.webContents.send('chat-replace', '📔 I could not write my diary.'); // don't leave "Writing…" up forever
+      win?.webContents.send('chat-done', { failed: true });
+    }
     throw e; // the tray handler still shows the error dialog
   }
   if (inFlightChat) return; // the owner started chatting while it wrote: never clobber that reply
@@ -218,7 +220,7 @@ function relaunch() {
 
 // Live: called on load and after every saved chat turn, diary entry or clear, so an open window never goes stale.
 function sendHistory() {
-  if (!historyWin) return;
+  if (!historyWin || historyWin.isDestroyed()) return;
   const userData = app.getPath('userData');
   historyWin.webContents.send('history-data', {
     name: meta.name,
@@ -726,7 +728,7 @@ ipcMain.on('chat-send', async (e, text: unknown) => {
     inFlightChat = false;
   }
 });
-ipcMain.on('chat-close', () => closeChat());
+ipcMain.on('chat-close', (e) => { if (e.sender !== win?.webContents) return; closeChat(); });
 ipcMain.on('key-submit', (e, key: unknown) => {
   if (e.sender !== win?.webContents) return;
   const mode = secretMode; // routed by the mode main opened, never by the renderer
