@@ -126,6 +126,7 @@ Four Chog inks and white vinyl, with a few tints that exist only to make text le
 
 ### Secondary
 - **Blush Pink** (pink): the primary action sticker, the Demo chip, focus rings, text selection and scrollbar thumb. Never a background for paragraphs.
+- **Legibility tints** (`--ink-soft` #4a3570 secondary text on vinyl, `--rule` #e4d9f5 dashed rules, `--bar-track` #efe6fb empty bar, `--pink-tint` #ffe1ea warning stickers such as "Can't reach the app"): tints of the four inks, used only so text and rules stay readable on white vinyl.
 
 ### Tertiary
 - **Chog Cream** (cream): note stickers (privacy promises), step numerals, and the art backing behind sprites in the album.

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { GOALS } from '@/lib/focus';
 import ui from './ui/sticker.module.css';
 import s from './page.module.css';
 
@@ -35,6 +36,23 @@ export default function Home() {
             </figure>
           ))}
         </div>
+      </section>
+
+      <section className={`${ui.sticker} ${s.bet}`} aria-labelledby="bet-title">
+        <div className={s.betCopy}>
+          <h2 id="bet-title" className={s.betTitle}>Bet on your focus</h2>
+          <p>Stake test $CHOG that you&apos;ll focus today. Hit the goal and win your stake back plus a bonus; miss it and most of it refills the reward pot. Your Chog does the counting.</p>
+          <p className={s.betHow}><strong>Start a bet from your Chog&apos;s tray menu:</strong> Bet on my focus.</p>
+          <p className={ui.label}>Monad testnet · mock $CHOG · no real money</p>
+        </div>
+        <table className={s.betTable}>
+          <thead><tr><th>Goal</th><th>Focus</th><th>Window</th><th>Bonus</th></tr></thead>
+          <tbody>
+            {GOALS.map((g) => (
+              <tr key={g.id}><td>{g.id === 0 ? 'Sprint' : g.name}</td><td>{g.focusMinutes} min</td><td>{g.id === 0 ? '5 min' : 'till midnight'}</td><td>+{g.bonusBps / 100}%</td></tr>
+            ))}
+          </tbody>
+        </table>
       </section>
 
       <p className={`${ui.sticker} ${ui.peel} ${s.privacy}`}>
