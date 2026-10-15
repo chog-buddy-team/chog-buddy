@@ -6,6 +6,10 @@
   --pink: #f48caa;
   --ink: #2a1842;
   --vinyl: #ffffff; /* the white kiss-cut border every sticker carries */
+  --ink-soft: #4a3570; /* secondary text on white vinyl */
+  --rule: #e4d9f5; /* dashed rules and outlines on white vinyl */
+  --bar-track: #efe6fb; /* empty part of a Soul or focus bar */
+  --pink-tint: #ffe1ea; /* blush tint for warning stickers: pink paper legible under ink text */
   --sheet: var(--hood);
   --letter: var(--ink); /* lettering ink: dark on the purple sheet, lilac on the night sheet */
   --sheet-line: rgb(255 255 255 / 0.09);
