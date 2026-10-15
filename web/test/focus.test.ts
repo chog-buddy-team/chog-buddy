@@ -52,27 +52,35 @@ describe('parseProgressBody', () => {
 });
 
 describe('decideProgress', () => {
+  const last = (minutes: number, secondsAfterStart: number) => ({ minutes, reportedAtMs: at(secondsAfterStart) });
   it('403 on a wrong key', () => {
-    expect(decideProgress(bet(), { key: `0x${'cd'.repeat(32)}`, focusMinutes: 1 }, null, at(90))).toMatchObject({ action: 'reject', status: 403 });
+    expect(decideProgress(bet(), { key: `0x${'cd'.repeat(32)}` as Hex, focusMinutes: 1 }, null, at(90))).toMatchObject({ action: 'reject', status: 403 });
   });
   it('409 when the bet is not open', () => {
     expect(decideProgress(bet({ status: 'Won' }), { key, focusMinutes: 1 }, null, at(90))).toMatchObject({ action: 'reject', status: 409 });
   });
-  it('409 after deadline + grace', () => {
-    expect(decideProgress(bet(), { key, focusMinutes: 3 }, null, at(300 + 121))).toMatchObject({ action: 'reject', status: 409 });
+  it('409 from the exact end of the grace period (same boundary as decideCheck)', () => {
+    expect(decideProgress(bet(), { key, focusMinutes: 3 }, last(2, 280), at(300 + 120))).toMatchObject({ action: 'reject', status: 409 });
+    expect(decideProgress(bet(), { key, focusMinutes: 3 }, last(2, 280), at(300 + 119))).toEqual({ action: 'win', minutes: 3 });
   });
-  it('400 when claiming more focus than time elapsed', () => {
-    expect(decideProgress(bet(), { key, focusMinutes: 5 }, null, at(60))).toMatchObject({ action: 'reject', status: 400 });
+  it('400 when claiming more focus than the exact time since the stake', () => {
+    expect(decideProgress(bet(), { key, focusMinutes: 2 }, null, at(119))).toMatchObject({ action: 'reject', status: 400 });
+    expect(decideProgress(bet(), { key, focusMinutes: 2 }, null, at(120))).toEqual({ action: 'store', minutes: 2 });
   });
-  it('stores progress below the goal', () => {
+  it('rejects a Sprint win at two minutes (no slack)', () => {
+    expect(decideProgress(bet(), { key, focusMinutes: 3 }, last(2, 110), at(120))).toMatchObject({ action: 'reject', status: 400 });
+  });
+  it('400 when one report jumps further than the time since the last report', () => {
+    expect(decideProgress(bet({ goal: 1, deadline: start + 7200 }), { key, focusMinutes: 5 }, last(1, 900), at(960))).toMatchObject({ action: 'reject', status: 400 });
+    expect(decideProgress(bet({ goal: 1, deadline: start + 7200 }), { key, focusMinutes: 2 }, last(1, 900), at(960))).toEqual({ action: 'store', minutes: 2 });
+  });
+  it('stores progress below the goal and never lowers it', () => {
     expect(decideProgress(bet(), { key, focusMinutes: 1 }, null, at(90))).toEqual({ action: 'store', minutes: 1 });
-  });
-  it('never lowers stored progress', () => {
-    expect(decideProgress(bet(), { key, focusMinutes: 1 }, 2, at(150))).toEqual({ action: 'store', minutes: 2 });
+    expect(decideProgress(bet(), { key, focusMinutes: 1 }, last(2, 140), at(150))).toEqual({ action: 'store', minutes: 2 });
   });
   it('wins at the goal, also inside the grace period', () => {
-    expect(decideProgress(bet(), { key, focusMinutes: 3 }, 2, at(200))).toEqual({ action: 'win', minutes: 3 });
-    expect(decideProgress(bet(), { key, focusMinutes: 3 }, 2, at(300 + 60))).toEqual({ action: 'win', minutes: 3 });
+    expect(decideProgress(bet(), { key, focusMinutes: 3 }, last(2, 170), at(200))).toEqual({ action: 'win', minutes: 3 });
+    expect(decideProgress(bet(), { key, focusMinutes: 3 }, last(2, 330), at(300 + 60))).toEqual({ action: 'win', minutes: 3 });
   });
 });
 

@@ -1,14 +1,10 @@
 import type { Hex } from 'viem';
-import { sql } from './db';
 import { decideCheck, type OnchainBet } from './focus';
-import { nextBetId, readBet, settleBet } from './focus-chain';
+import { nextBetId, readBet } from './focus-chain';
+import { getCursor, setCursor, settleOnce, storedMinutes } from './focus-store';
 
-const MAX_PER_RUN = 300;
-
-export async function storedMinutes(betId: bigint): Promise<number | null> {
-  const rows = await sql`select minutes from focus_progress where bet_id = ${betId.toString()}`;
-  return rows.length ? (rows[0].minutes as number) : null;
-}
+// Stays well inside the 60 s function limit, so the cursor is always saved.
+const BUDGET_MS = 30_000;
 
 export type SweepDeps = {
   nextBetId: () => Promise<bigint>;
@@ -17,32 +13,22 @@ export type SweepDeps = {
   settleBet: (id: bigint, won: boolean) => Promise<Hex>;
   getCursor: () => Promise<bigint | null>;
   setCursor: (next: bigint) => Promise<void>;
+  clock: () => number;
 };
 
-const liveDeps: SweepDeps = {
-  nextBetId,
-  readBet,
-  storedMinutes,
-  settleBet,
-  getCursor: async () => {
-    const [row] = await sql`select next_open from focus_cursor where id = 1`;
-    return row ? BigInt(row.next_open) : null;
-  },
-  setCursor: async (next) => {
-    await sql`insert into focus_cursor (id, next_open) values (1, ${next.toString()}) on conflict (id) do update set next_open = excluded.next_open`;
-  },
-};
+const liveDeps: SweepDeps = { nextBetId, readBet, storedMinutes, settleBet: settleOnce, clock: Date.now, getCursor, setCursor };
 
 // Settles every open bet whose time is up. Walks from the lowest bet id that was still open last run.
 // A failed settle doesn't stop the run; that bet stays open and the next run starts from it.
-export async function sweepExpiredBets(nowMs = Date.now(), deps: SweepDeps = liveDeps): Promise<{ checked: number; settled: number; failed: number }> {
+export async function sweepExpiredBets(nowMs = Date.now(), deps: SweepDeps = liveDeps, budgetMs = BUDGET_MS): Promise<{ checked: number; settled: number; failed: number }> {
+  const t0 = deps.clock();
   const from = (await deps.getCursor()) ?? 1n;
   const end = await deps.nextBetId();
   let firstStillOpen: bigint | null = null;
   let checked = 0;
   let settled = 0;
   let failed = 0;
-  for (let id = from; id < end && checked < MAX_PER_RUN; id++, checked++) {
+  for (let id = from; id < end && deps.clock() - t0 < budgetMs; id++, checked++) {
     const decision = decideCheck(await deps.readBet(id), await deps.storedMinutes(id), nowMs);
     if (decision === 'win' || decision === 'lose') {
       try {

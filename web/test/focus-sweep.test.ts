@@ -21,6 +21,7 @@ function fakes(failOn: bigint) {
       settled.push(id);
       return '0x' as Hex;
     },
+    clock: () => 0,
     getCursor: async () => cursor,
     setCursor: async (c) => { cursor = c; },
   };
@@ -34,5 +35,15 @@ describe('sweepExpiredBets', () => {
     expect(f.settled).toEqual([2n, 3n]);
     expect(r).toMatchObject({ checked: 3, settled: 2, failed: 1 });
     expect(f.cursor()).toBe(1n); // the failed bet is still open, so the next run starts there
+  });
+  it('stops at its time budget and saves the cursor at the first unchecked bet', async () => {
+    const f = fakes(99n);
+    let t = 0;
+    f.deps.settleBet = async (id) => { t += 600; f.settled.push(id); return '0x' as Hex; };
+    f.deps.clock = () => t;
+    const r = await sweepExpiredBets((start + 1000) * 1000, f.deps, 1000);
+    expect(f.settled).toEqual([1n, 2n]); // the budget runs out after the second settle
+    expect(r).toMatchObject({ checked: 2, settled: 2, failed: 0 });
+    expect(f.cursor()).toBe(3n);
   });
 });

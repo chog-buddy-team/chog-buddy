@@ -1,6 +1,6 @@
 import { decideCheck } from '@/lib/focus';
-import { readBet, settleBet } from '@/lib/focus-chain';
-import { storedMinutes } from '@/lib/focus-sweep';
+import { readBet } from '@/lib/focus-chain';
+import { settleOnce, storedMinutes } from '@/lib/focus-store';
 
 // Anyone may ask; settles a bet whose time is up (or a win whose settle failed) and returns its status.
 export async function POST(req: Request) {
@@ -13,9 +13,9 @@ export async function POST(req: Request) {
   const decision = decideCheck(bet, minutes, Date.now());
   if (decision === 'win' || decision === 'lose') {
     try {
-      await settleBet(betId, decision === 'win');
+      await settleOnce(betId, decision === 'win');
     } catch {
-      // Settled in parallel; the fresh read below shows the result.
+      // Another request holds the settle, or it failed; the fresh read below shows the status.
     }
     return Response.json({ status: (await readBet(betId)).status, minutes: minutes ?? 0, deadline: bet.deadline, goal: bet.goal });
   }

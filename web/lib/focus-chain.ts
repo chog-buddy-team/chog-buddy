@@ -38,6 +38,7 @@ export async function settleBet(betId: bigint, won: boolean): Promise<Hex> {
   const account = privateKeyToAccount(process.env.SETTLER_KEY as Hex);
   const wallet = createWalletClient({ account, chain: monadTestnet, transport: transport() });
   const hash = await wallet.writeContract({ address: pool(), abi: focusPoolAbi, functionName: 'settle', args: [betId, won] });
-  await reader().waitForTransactionReceipt({ hash });
+  const receipt = await reader().waitForTransactionReceipt({ hash });
+  if (receipt.status !== 'success') throw new Error(`settle reverted: ${hash}`);
   return hash;
 }

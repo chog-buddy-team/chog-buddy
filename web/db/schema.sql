@@ -51,15 +51,28 @@ create table if not exists chat_usage (
   primary key (key, day)
 );
 
--- Focus Bets: latest focus minutes the Pet reported per bet (bet details live onchain).
-create table if not exists focus_progress (
-  bet_id bigint primary key,
+-- Focus Bets. Every table is keyed by the pool address (lowercase), so a redeployed pool starts clean.
+-- Replaces focus_progress and focus_cursor, which had no pool column: drop table if exists focus_progress, focus_cursor;
+
+-- Latest focus minutes the Pet reported per bet (bet details live onchain).
+create table if not exists focus_reports (
+  pool text not null,
+  bet_id bigint not null,
   minutes int not null,
-  reported_at timestamptz not null default now()
+  reported_at timestamptz not null default now(),
+  primary key (pool, bet_id)
 );
 
 -- Daily sweep cursor: lowest bet id that was still open last run.
-create table if not exists focus_cursor (
-  id int primary key default 1,
+create table if not exists focus_sweep_cursor (
+  pool text primary key,
   next_open bigint not null
+);
+
+-- One settle transaction per bet at a time.
+create table if not exists focus_settling (
+  pool text not null,
+  bet_id bigint not null,
+  locked_at timestamptz not null default now(),
+  primary key (pool, bet_id)
 );

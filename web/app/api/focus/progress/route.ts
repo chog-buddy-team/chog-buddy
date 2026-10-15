@@ -1,7 +1,6 @@
-import { sql } from '@/lib/db';
 import { decideProgress, parseProgressBody } from '@/lib/focus';
-import { readBet, settleBet } from '@/lib/focus-chain';
-import { storedMinutes } from '@/lib/focus-sweep';
+import { readBet } from '@/lib/focus-chain';
+import { saveProgress, settleOnce, storedProgress } from '@/lib/focus-store';
 
 const MIN_REPORT_GAP_MS = 20_000;
 
@@ -15,22 +14,16 @@ export async function POST(req: Request) {
   }
   const bet = await readBet(body.betId);
   if (bet.status === 'None') return Response.json({ error: 'no such bet' }, { status: 404 });
-  const decision = decideProgress(bet, body, await storedMinutes(body.betId), Date.now());
+  const decision = decideProgress(bet, body, await storedProgress(body.betId), Date.now());
   if (decision.action === 'reject') return Response.json({ error: decision.error }, { status: decision.status });
 
-  const id = body.betId.toString();
-  const accepted = await sql`
-    insert into focus_progress (bet_id, minutes, reported_at) values (${id}, ${decision.minutes}, now())
-    on conflict (bet_id) do update set minutes = greatest(focus_progress.minutes, excluded.minutes), reported_at = now()
-    where focus_progress.reported_at < now() - make_interval(secs => ${MIN_REPORT_GAP_MS / 1000})
-    returning minutes`;
-  if (accepted.length === 0) return Response.json({ error: 'too many reports, wait 20 seconds' }, { status: 429 });
+  if (!(await saveProgress(body.betId, decision.minutes, MIN_REPORT_GAP_MS))) return Response.json({ error: 'too many reports, wait 20 seconds' }, { status: 429 });
 
   if (decision.action === 'win') {
     try {
-      await settleBet(body.betId, true);
+      await settleOnce(body.betId, true);
     } catch {
-      // A parallel report may have settled it already; /api/focus/check retries otherwise.
+      // Another request holds the settle, or it failed; /api/focus/check and the sweep retry.
     }
     return Response.json({ status: (await readBet(body.betId)).status, minutes: decision.minutes });
   }

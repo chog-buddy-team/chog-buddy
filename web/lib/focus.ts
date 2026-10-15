@@ -39,19 +39,27 @@ export function parseProgressBody(x: unknown): { betId: bigint; key: Hex; focusM
 
 type Reject = { action: 'reject'; status: 400 | 403 | 409; error: string };
 
+export type StoredProgress = { minutes: number; reportedAtMs: number };
+
+// Focus is self-reported by the Pet, so the server bounds it by real time twice: never more than the
+// time since the stake, and never more new minutes than the time since the last accepted report.
+// One forged report at the end cannot win; the reporter has to keep up with the clock the whole way.
 export function decideProgress(
   bet: OnchainBet,
   report: { key: Hex; focusMinutes: number },
-  storedMinutes: number | null,
+  stored: StoredProgress | null,
   nowMs: number,
 ): Reject | { action: 'store' | 'win'; minutes: number } {
   const goal = GOALS[bet.goal];
   if (keyHashOf(report.key).toLowerCase() !== bet.progressKeyHash.toLowerCase()) return { action: 'reject', status: 403, error: 'wrong progress key' };
   if (bet.status !== 'Open') return { action: 'reject', status: 409, error: `bet is ${bet.status}` };
-  if (nowMs > bet.deadline * 1000 + goal.graceMs) return { action: 'reject', status: 409, error: 'bet deadline has passed' };
-  const elapsedMinutes = Math.floor((nowMs - bet.start * 1000) / 60_000);
-  if (report.focusMinutes > elapsedMinutes + 1) return { action: 'reject', status: 400, error: 'more focus than time since the stake' };
-  const minutes = Math.max(storedMinutes ?? 0, report.focusMinutes);
+  // Same boundary as decideCheck's 'lose', so a win and a loss can never both be due.
+  if (nowMs >= bet.deadline * 1000 + goal.graceMs) return { action: 'reject', status: 409, error: 'bet deadline has passed' };
+  if (report.focusMinutes * 60_000 > nowMs - bet.start * 1000) return { action: 'reject', status: 400, error: 'more focus than time since the stake' };
+  if (stored && report.focusMinutes > stored.minutes + Math.ceil((nowMs - stored.reportedAtMs) / 60_000)) {
+    return { action: 'reject', status: 400, error: 'more focus than time since the last report' };
+  }
+  const minutes = Math.max(stored?.minutes ?? 0, report.focusMinutes);
   return { action: minutes >= goal.focusMinutes ? 'win' : 'store', minutes };
 }
 
