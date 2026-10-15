@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, safeStorage, screen, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, powerMonitor, safeStorage, screen, shell, Tray } from 'electron';
 import path from 'node:path';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { ARCHETYPES, SKIN_IDS, categorize, fetchChogMetadata, ipfsToHttp, pickArchetype, type ArchetypeId, type ChogMetadata } from '@chog/core';
@@ -108,6 +108,8 @@ function closeChat() {
   chatOpen = false;
   win.setFocusable(false);
   win.blur();
+  // ponytail: app.hide returns focus to the previous app; showInactive keeps the pet visible. Revisit if a flicker shows.
+  if (process.platform === 'darwin') { app.hide(); win.showInactive(); }
   win.webContents.send('chat-closed');
 }
 
@@ -118,7 +120,7 @@ async function refreshOllamaModels() {
 
 async function say(trigger: Trigger) {
   const template = pickLine(archetype, trigger, lastCategory);
-  const line = await flavourLine({
+  const line = trigger === 'pet' ? template : await flavourLine({ // a poke answers instantly, no model round trip
     template, rand: Math.random,
     generate: async () => {
       // Never the server provider: it ignores system prompts and spends the shared daily cap.
@@ -169,8 +171,17 @@ function ensureDiary(): Promise<DiaryEntry> {
 }
 
 async function showDiary() {
-  const entry = await ensureDiary();
   openChat('chat');
+  win?.webContents.send('chat-replace', '📔 Writing my diary…'); // the model can take a while
+  let entry: DiaryEntry;
+  try {
+    entry = await ensureDiary();
+  } catch (e) {
+    win?.webContents.send('chat-replace', '📔 I could not write my diary.'); // don't leave "Writing…" up forever
+    win?.webContents.send('chat-done', { failed: true });
+    throw e; // the tray handler still shows the error dialog
+  }
+  if (inFlightChat) return; // the owner started chatting while it wrote: never clobber that reply
   win?.webContents.send('chat-replace', `📔 ${entry.text}`); // replace, not append: the bubble may still hold an old line
   win?.webContents.send('chat-done', { failed: false });
 }
@@ -285,6 +296,7 @@ async function resolveChoice(choice: Startup, base: string): Promise<{ tokenId: 
       return { tokenId: JUDGE_TOKEN_ID, judge: true };
     }
     try {
+      if (Notification.isSupported()) new Notification({ title: 'Chog Buddy', body: 'Finish signing in in your browser. This window waits up to 5 minutes.' }).show(); // never the URL or state
       const s = await startSignIn({ apiUrl: base, open: (u) => void shell.openExternal(u).catch(() => {}) });
       const tokenEnc = seal(cipher, s.token);
       if (!tokenEnc) throw new Error('Secure storage unavailable');
@@ -586,6 +598,7 @@ async function start() {
           label: "Today's diary",
           click: () => void showDiary().catch((e) => dialog.showErrorBox('Chog Buddy', `Could not write today's diary.\n\n${(e as Error).message}`)),
         },
+        { label: 'Open Chog Park', click: () => void shell.openExternal(`${apiUrl()}/park`).catch(() => {}) },
         { label: 'Chat history…', click: () => openHistory() },
         {
           label: 'Clear chat history',
