@@ -74,4 +74,15 @@ describe('settings store', () => {
     expect(loadSettings(dir)).toMatchObject({ tokenId: 42, judgeMode: true });
     expect(readdirSync(dir)).toEqual(['settings.json']);
   });
+  it('focusBet defaults to null, round-trips, and a broken saved value becomes null', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    expect(loadSettings(dir).focusBet).toBeNull();
+    const bet = { betId: '3', keyEnc: 'c2VhbGVk', focusMs: 65_000, startedAt: 1, deadline: null, goal: null, goalMinutes: null };
+    saveSettings(dir, { ...loadSettings(dir), focusBet: bet });
+    expect(loadSettings(dir).focusBet).toEqual(bet);
+    for (const bad of [null, 'x', [], 5, {}, { betId: 3, keyEnc: 'k', focusMs: 0 }, { betId: '3', keyEnc: 'k', focusMs: 'a' }]) {
+      writeFileSync(join(dir, 'settings.json'), JSON.stringify({ focusBet: bad }));
+      expect(loadSettings(dir).focusBet).toBeNull();
+    }
+  });
 });
