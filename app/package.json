@@ -58,7 +58,7 @@
     "icon": "build/icon.png",
     "publish": {
       "provider": "github",
-      "owner": "faroukobayanju",
+      "owner": "chog-buddy-team",
       "repo": "chog-buddy",
       "releaseType": "release"
     },

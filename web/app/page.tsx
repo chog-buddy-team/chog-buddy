@@ -3,7 +3,7 @@ import { GOALS } from '@/lib/focus';
 import ui from './ui/sticker.module.css';
 import s from './page.module.css';
 
-const RELEASES = 'https://github.com/faroukobayanju/chog-buddy/releases';
+const RELEASES = 'https://github.com/chog-buddy-team/chog-buddy/releases';
 
 // The skin stickers scattered around the hero, each with its own short label sticker.
 const SCATTER = [

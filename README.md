@@ -8,7 +8,7 @@ Built for **Chogathon 2026** by Farouk ([@faroukobayanju](https://github.com/far
 
 | | |
 |---|---|
-| **Download** | [Latest release](https://github.com/faroukobayanju/chog-buddy/releases/latest) (macOS Apple Silicon + Intel, Windows) |
+| **Download** | [Latest release](https://github.com/chog-buddy-team/chog-buddy/releases/latest) (macOS Apple Silicon + Intel, Windows) |
 | **Website** | https://chogbuddy.vercel.app |
 | **Chog Park** (every active Chog and its Soul) | https://chogbuddy.vercel.app/park |
 | **Focus Bets** (start it from the Pet's tray) | https://chogbuddy.vercel.app/focus |
@@ -47,7 +47,7 @@ The NFT isn't a skin on top of a generic pet. Take the Chog away and there's not
 
 ## Try it as a judge
 
-1. Download the installer for your computer from the [latest release](https://github.com/faroukobayanju/chog-buddy/releases/latest). See the install notes below.
+1. Download the installer for your computer from the [latest release](https://github.com/chog-buddy-team/chog-buddy/releases/latest). See the install notes below.
 2. Open Chog Buddy. When it asks, pick **Judge Mode (demo Chog)**, or sign in if you hold a Chog.
 3. Things to try:
    - Click the Chog to poke it.
@@ -139,7 +139,7 @@ The Focus Bets contracts are verified on Sourcify. Deployment details are in [co
 Requirements: Node 24, plus Foundry if you want the contracts.
 
 ```bash
-git clone --recurse-submodules https://github.com/faroukobayanju/chog-buddy && cd chog-buddy
+git clone --recurse-submodules https://github.com/chog-buddy-team/chog-buddy && cd chog-buddy
 npm install
 npm start -w chog-buddy-app        # run the Pet against the live backend
 npm test -w @chog/core -w chog-buddy-app -w web
