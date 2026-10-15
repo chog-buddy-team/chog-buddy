@@ -25,6 +25,7 @@ import { buildSystemPrompt } from './llm/prompt';
 import { createServerChat } from './llm/server';
 import { ChatSession, HISTORY_CAP, MAX_INPUT, pickProvider } from './llm/session';
 import { petdexFolderName, petdexManifest } from './petdex';
+import { createWipeGuard } from './wipe';
 
 const W = 192;
 const H = 260; // 208 sprite + room for the speech bubble
@@ -66,11 +67,13 @@ const warned = new Set<number>();
 let diaryBusy: Promise<DiaryEntry> | null = null;
 let historyWin: BrowserWindow | null = null;
 let startedJudge = false; // the previous run was Judge Mode: its token was never owned, so nothing to wipe
+const wipes = createWipeGuard();
 
 // The previously active token is no longer owned: its diary and chat history must not outlive it.
 function checkLost(owned: number[]): boolean {
   if (startedJudge || decideOwnership(settings.tokenId, owned) !== 'lost') return false;
   const userData = app.getPath('userData');
+  wipes.bump();
   wipeDiary(userData);
   wipeChatLog(userData);
   return true;
@@ -118,16 +121,18 @@ async function refreshOllamaModels() {
   rebuildMenu?.();
 }
 
+// Ollama or Gemini only. Never the server provider: it ignores system prompts and spends the shared daily cap.
+async function localLine(system: string, user: string): Promise<string> {
+  const p = await pickProvider(settings.chat.provider, [createOllama({ model: settings.chat.ollamaModel }), createGemini({ apiKey: geminiKey() })]);
+  if (!p) throw new Error('no provider');
+  return p.stream(system, [{ role: 'user', content: user }], () => {});
+}
+
 async function say(trigger: Trigger) {
   const template = pickLine(archetype, trigger, lastCategory);
   const line = trigger === 'pet' ? template : await flavourLine({ // a poke answers instantly, no model round trip
     template, rand: Math.random,
-    generate: async () => {
-      // Never the server provider: it ignores system prompts and spends the shared daily cap.
-      const p = await pickProvider(settings.chat.provider, [createOllama({ model: settings.chat.ollamaModel }), createGemini({ apiKey: geminiKey() })]);
-      if (!p) throw new Error('no provider');
-      return p.stream(flavourPrompt({ chogName: meta.name, archetype, trigger, category: lastCategory, template }), [{ role: 'user', content: 'React now.' }], () => {});
-    },
+    generate: () => localLine(flavourPrompt({ chogName: meta.name, archetype, trigger, category: lastCategory, template }), 'React now.'),
   });
   if (chatOpen || inFlightChat) return; // a chat opened while the line was generating: drop the line
   win?.webContents.send('say', line);
@@ -153,18 +158,15 @@ function ensureDiary(): Promise<DiaryEntry> {
     const day = dayKey(new Date());
     const saved = loadDiary(userData).find((e) => e.tokenId === tokenId && e.day === day);
     if (saved) return saved;
+    const e0 = wipes.epoch();
     const token = currentToken();
     const r = await writeDiary({
       remote: () => (judge || !token ? Promise.reject(new Error('judge/signed-out')) : createApi({ baseUrl: apiUrl(), token }).diary({ tokenId, totals: settings.today.totals })),
-      local: async () => {
-        const p = await pickProvider(settings.chat.provider, [createOllama({ model: settings.chat.ollamaModel }), createGemini({ apiKey: geminiKey() })]);
-        if (!p) throw new Error('no provider');
-        return p.stream(localDiaryPrompt({ chogName: meta.name, archetype, totals: settings.today.totals }), [{ role: 'user', content: "Write today's entry." }], () => {});
-      },
+      local: () => localLine(localDiaryPrompt({ chogName: meta.name, archetype, totals: settings.today.totals }), "Write today's entry."),
       template: pickLine(archetype, 'idle_return', lastCategory),
     });
     const entry = { day, tokenId, text: r.text };
-    appendDiary(userData, entry);
+    if (!wipes.stale(e0)) appendDiary(userData, entry); // a wipe while it wrote: show it, never save it
     return entry;
   })().finally(() => { diaryBusy = null; });
   return diaryBusy;
@@ -475,14 +477,22 @@ async function start() {
       // Yesterday's final totals go up on the first tick after midnight, not at the next hourly slot.
       if (settings.yesterday || uploadDue(settings.lastUpload, Date.now())) {
         const jobs = uploadsFor({ judge, signedIn: !!token, tokenId, today: settings.today, yesterday: settings.yesterday });
-        try {
-          for (const j of jobs) await api.uploadActivity(j);
-          if (jobs.length) { settings.lastUpload = Date.now(); settings.yesterday = null; } // only once every job succeeded
-        } catch (e) {
-          if (e instanceof ApiError && e.status === 401) { await expireSession(); return; }
-          if (e instanceof ApiError && e.status === 400) settings.yesterday = null; // too old for the backend, it can never be sent
-          else if (e instanceof ApiError && e.status === 403) settings.lastOwnershipCheck = 0; // re-check ownership now
-          // anything else: retry next tick
+        // Each day settles on its own: a bad today must not keep yesterday from clearing, or the reverse.
+        for (const j of jobs) {
+          try {
+            await api.uploadActivity(j);
+            if (j.day === settings.yesterday?.day) settings.yesterday = null;
+            else settings.lastUpload = Date.now();
+          } catch (e) {
+            if (e instanceof ApiError && e.status === 401) { await expireSession(); return; }
+            if (e instanceof ApiError && e.status === 403) { settings.lastOwnershipCheck = 0; break; } // re-check ownership now
+            if (e instanceof ApiError && e.status === 400) {
+              if (j.day === settings.yesterday?.day) settings.yesterday = null; // too old: can never be sent
+              else settings.lastUpload = Date.now(); // bad today payload: wait for the next hourly slot instead of hammering
+              continue;
+            }
+            break; // network/5xx: retry next tick
+          }
         }
       }
       if (token && ownershipCheckDue(settings.lastOwnershipCheck, Date.now())) {
@@ -603,6 +613,7 @@ async function start() {
         {
           label: 'Clear chat history',
           click: () => {
+            wipes.bump();
             wipeChatLog(userData);
             if (chat) chat.history = [];
             historyWin?.close();
@@ -635,6 +646,7 @@ async function start() {
           click: () => {
             settings.session = null;
             settings.judgeMode = false;
+            wipes.bump();
             wipeDiary(userData);
             wipeChatLog(userData);
             relaunch();
@@ -679,11 +691,13 @@ ipcMain.on('chat-send', async (e, text: unknown) => {
   inFlightChat = true;
   try {
     talkUntil = Date.now() + 60_000;
+    const e0 = wipes.epoch();
     const r = await chat.send(text, (t) => {
       talkUntil = Date.now() + TALK_MS;
       win?.webContents.send('chat-token', t);
     });
     if (r.failed) win?.webContents.send('chat-replace', r.reply);
+    else if (wipes.stale(e0)) chat.history = []; // wiped while streaming: never recreate the log, not even in memory
     else if (r.reply) {
       try {
         appendChatLog(app.getPath('userData'), cipher, [
