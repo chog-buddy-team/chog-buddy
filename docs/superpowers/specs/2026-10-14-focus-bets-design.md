@@ -118,7 +118,7 @@ The server bounds every report by real time:
 One page, served by our backend, opened by the Pet ("Bet on my focus" in the tray).
 - Connect wallet (injected wallet via viem), switch to Monad testnet.
 - Shows MON balance with the faucet link, mCHOG balance with "Get 100 test $CHOG", and the pot size.
-- Pick goal + amount, see the expected bonus, then stake (permit signature + transaction). Staking only works when the page was opened from the app, since only the app can report focus.
+- Pick goal + amount, see the expected bonus, then stake: an approve for exactly the amount (skipped if already approved), then the stake. No permit signature: wallets flag those as high risk. Staking only works when the page was opened from the app, since only the app can report focus.
 - The progress key is saved in this browser **before** the stake is sent (matched to the bet later by its onchain hash), so a failed receipt wait or a closed tab can't lose it. The page can send it to the app again at any time and can find a Won bet for Claim later. The bet id comes from the `Staked` event.
 - A Refund button shows when `canRefund` is true.
 - Live status: countdown, focus minutes from the server, then "You won! Claim" or "Missed it".
@@ -127,8 +127,8 @@ One page, served by our backend, opened by the Pet ("Bet on my focus" in the tra
 
 ## What Farouk's app needs to do
 
-- Tray item "Bet on my focus" opens `https://chog-buddy-api.vercel.app/focus`.
-- Loopback server answers `GET /focus?state=<state>` with 200 only for the state it put in the page URL (the page enables Stake only after this), and receives the progress key on `POST /focus {state, betId, key}`. Both need CORS for the page origin (and `Access-Control-Allow-Private-Network: true` on the preflight for Chrome).
+- Tray item "Bet on my focus" opens `https://chogbuddy.vercel.app/focus?port=<loopback port>&state=<32 hex>`.
+- Loopback server answers `GET /focus?state=<state>` with 200 only for the state it put in the page URL (the page enables Stake only after this), and receives the progress key on `POST /focus {state, betId, key}`. Both need CORS for the page origins `https://chogbuddy.vercel.app` and `https://chog-buddy-api.vercel.app` (and `Access-Control-Allow-Private-Network: true` on the preflight for Chrome). `web/scripts/fake-pet.mjs` is a working reference.
 - While a bet is open: post progress every 30 s (coding + design minutes since stake).
 - On result: play the sprite kit's celebrate row (win) or sad row (loss).
 
