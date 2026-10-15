@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canPickGoal, localMidnightDeadline, newProgressKey } from '@/lib/focus-page';
+import { canPickGoal, estimatedBonus, localMidnightDeadline, newProgressKey, parseSavedBets, rememberBet } from '@/lib/focus-page';
 
 const local = (h: number, m: number) => new Date(2026, 9, 14, h, m, 0);
 const secs = (d: Date) => Math.floor(d.getTime() / 1000);
@@ -34,5 +34,33 @@ describe('newProgressKey', () => {
     const a = newProgressKey();
     expect(a).toMatch(/^0x[0-9a-f]{64}$/);
     expect(newProgressKey()).not.toBe(a);
+  });
+});
+
+describe('estimatedBonus', () => {
+  const e18 = 10n ** 18n;
+  it('is the goal share of the stake when the pot is large', () => {
+    expect(estimatedBonus(10n * e18, 0, 100_000n * e18)).toBe(e18 / 2n); // 5% of 10
+  });
+  it('is capped at 1% of the free pot, like the contract', () => {
+    expect(estimatedBonus(100n * e18, 3, 1_000n * e18)).toBe(10n * e18); // 50% of 100, capped at 1% of 1000
+  });
+});
+
+describe('saved bets', () => {
+  const key = `0x${'ab'.repeat(32)}` as const;
+  it('ignores missing or broken storage', () => {
+    expect(parseSavedBets(null)).toEqual([]);
+    expect(parseSavedBets('not json')).toEqual([]);
+    expect(parseSavedBets(JSON.stringify([{ betId: 'x' }, { betId: '3', key }, { betId: '4', key: '0x12' }]))).toEqual([{ betId: '3', key }]);
+  });
+  it('puts the newest bet first, replaces the same id and keeps 20', () => {
+    let list = parseSavedBets(null);
+    for (let i = 1; i <= 25; i++) list = rememberBet(list, { betId: String(i), key });
+    expect(list).toHaveLength(20);
+    expect(list[0].betId).toBe('25');
+    const again = rememberBet(list, { betId: '24', key });
+    expect(again[0].betId).toBe('24');
+    expect(again.filter((b) => b.betId === '24')).toHaveLength(1);
   });
 });

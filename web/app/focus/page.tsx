@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { createPublicClient, createWalletClient, custom, formatUnits, http, parseAbi, parseSignature, parseUnits, type Address, type Hex } from 'viem';
 import { monadTestnet } from '@chog/core';
-import { GOALS, keyHashOf, type GoalId } from '@/lib/focus';
-import { canPickGoal, localMidnightDeadline, newProgressKey } from '@/lib/focus-page';
+import { GOALS, STATUSES, keyHashOf, type GoalId } from '@/lib/focus';
+import { canPickGoal, estimatedBonus, localMidnightDeadline, newProgressKey, parseSavedBets, rememberBet, type SavedBet } from '@/lib/focus-page';
 
 declare global {
   interface Window { ethereum?: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } }
@@ -23,6 +23,10 @@ const tokenAbi = parseAbi([
 const poolAbi = parseAbi([
   'function stakeWithPermit(uint8 goal, uint96 amount, uint40 deadline, bytes32 progressKeyHash, uint256 permitDeadline, uint8 v, bytes32 r, bytes32 s) returns (uint256)',
   'function claim(uint256 betId)',
+  'function refund(uint256 betId)',
+  'function canRefund(uint256 betId) view returns (bool)',
+  'struct Bet { address bettor; uint96 amount; uint40 start; uint40 deadline; uint96 bonus; uint8 goal; uint8 status; bytes32 progressKeyHash; }',
+  'function getBet(uint256 betId) view returns (Bet)',
   'function openBetOf(address) view returns (uint256)',
   'function nextBetId() view returns (uint256)',
   'function potAvailable() view returns (uint256)',
@@ -33,7 +37,27 @@ const noSubscribe = () => () => {};
 const clientSearch = () => window.location.search;
 const serverSearch = () => null;
 
-type Live = { betId: bigint; status: string; minutes: number; deadline: number; goal: GoalId };
+// A reverted tx still gets a receipt; treat it as an error so the page never shows a false success.
+async function mined(hash: Hex) {
+  const r = await reader.waitForTransactionReceipt({ hash });
+  if (r.status !== 'success') throw new Error('The transaction reverted.');
+}
+
+const savedKey = (a: Address) => `focus-bets:${POOL}:${a}`.toLowerCase();
+function loadSaved(a: Address): SavedBet[] {
+  try {
+    return parseSavedBets(localStorage.getItem(savedKey(a)));
+  } catch {
+    return [];
+  }
+}
+function saveBet(a: Address, bet: SavedBet) {
+  try {
+    localStorage.setItem(savedKey(a), JSON.stringify(rememberBet(loadSaved(a), bet)));
+  } catch {}
+}
+
+type Live = { betId: bigint; status: string; minutes: number; deadline: number; goal: GoalId; canRefund: boolean };
 
 export default function Focus() {
   const search = useSyncExternalStore<string | null>(noSubscribe, clientSearch, serverSearch);
@@ -51,6 +75,7 @@ export default function Focus() {
   const [links, setLinks] = useState<{ label: string; hash: string }[]>([]);
   const [live, setLive] = useState<Live | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [handoffFailed, setHandoffFailed] = useState(false);
 
   const wallet = useCallback(() => createWalletClient({ chain: monadTestnet, transport: custom(window.ethereum!) }), []);
 
@@ -67,7 +92,8 @@ export default function Focus() {
     const r = await fetch('/api/focus/check', { method: 'POST', body: JSON.stringify({ betId: betId.toString() }) }).catch(() => null);
     if (!r?.ok) return;
     const j = await r.json();
-    setLive({ betId, status: j.status, minutes: j.minutes, deadline: j.deadline, goal: (j.goal ?? g) as GoalId });
+    const canRefund = j.status === 'Open' && (await reader.readContract({ address: POOL, abi: poolAbi, functionName: 'canRefund', args: [betId] }).catch(() => false));
+    setLive({ betId, status: j.status, minutes: j.minutes, deadline: j.deadline, goal: (j.goal ?? g) as GoalId, canRefund });
   }, []);
 
   useEffect(() => {
@@ -108,14 +134,34 @@ export default function Focus() {
       setAccount(a);
       await refresh(a);
       const open = await reader.readContract({ address: POOL, abi: poolAbi, functionName: 'openBetOf', args: [a] });
-      if (open > 0n) await poll(open, 0);
+      if (open > 0n) return poll(open, 0);
+      // No open bet: look for a win this browser staked that still waits for Claim.
+      const saved = loadSaved(a);
+      const bets = await Promise.all(saved.map((b) => reader.readContract({ address: POOL, abi: poolAbi, functionName: 'getBet', args: [BigInt(b.betId)] }).catch(() => null)));
+      const won = saved.find((_, i) => bets[i] && STATUSES[bets[i]!.status] === 'Won' && bets[i]!.bettor.toLowerCase() === a.toLowerCase());
+      if (won) await poll(BigInt(won.betId), 0);
+    });
+
+  async function sendToApp(betId: bigint, key: Hex) {
+    const ok = await fetch(`http://127.0.0.1:${port}/focus`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ state, betId: betId.toString(), key }),
+    }).then((r) => r.ok, () => false);
+    setHandoffFailed(!ok);
+  }
+
+  const resend = () =>
+    run('Sending the bet to the Chog Buddy app…', async () => {
+      const saved = loadSaved(account!).find((b) => b.betId === live!.betId.toString());
+      if (!saved) throw new Error('This browser does not have the key for this bet.');
+      await sendToApp(live!.betId, saved.key);
     });
 
   const faucet = () =>
     run('Getting 100 test $CHOG…', async () => {
       const hash = await wallet().writeContract({ account: account!, address: TOKEN, abi: tokenAbi, functionName: 'faucet' });
       setLinks((l) => [...l, { label: 'Faucet', hash }]);
-      await reader.waitForTransactionReceipt({ hash });
+      await mined(hash);
       await refresh(account!);
     });
 
@@ -144,16 +190,12 @@ export default function Focus() {
         args: [goal, value, deadline, keyHashOf(key), permitDeadline, Number(v), r, s],
       });
       setLinks((l) => [...l, { label: 'Stake', hash }]);
-      await reader.waitForTransactionReceipt({ hash });
+      await mined(hash);
       // nextBetId may have moved if someone else staked at the same moment; openBetOf is authoritative.
       const mine = await reader.readContract({ address: POOL, abi: poolAbi, functionName: 'openBetOf', args: [a] });
       const id = mine > 0n ? mine : betId;
-      if (fromApp) {
-        await fetch(`http://127.0.0.1:${port}/focus`, {
-          method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ state, betId: id.toString(), key }),
-        }).catch(() => setMsg('Could not reach the Chog Buddy app. Keep it open so it can report your focus.'));
-      }
+      saveBet(a, { betId: id.toString(), key });
+      await sendToApp(id, key);
       await refresh(a);
       await poll(id, goal);
     });
@@ -162,23 +204,33 @@ export default function Focus() {
     run('Claiming…', async () => {
       const hash = await wallet().writeContract({ account: account!, address: POOL, abi: poolAbi, functionName: 'claim', args: [live!.betId] });
       setLinks((l) => [...l, { label: 'Claim', hash }]);
-      await reader.waitForTransactionReceipt({ hash });
+      await mined(hash);
+      await refresh(account!);
+      await poll(live!.betId, live!.goal);
+    });
+
+  const refund = () =>
+    run('Refunding…', async () => {
+      const hash = await wallet().writeContract({ account: account!, address: POOL, abi: poolAbi, functionName: 'refund', args: [live!.betId] });
+      setLinks((l) => [...l, { label: 'Refund', hash }]);
+      await mined(hash);
       await refresh(account!);
       await poll(live!.betId, live!.goal);
     });
 
   const fmt = (x: bigint) => Number(formatUnits(x, 18)).toLocaleString(undefined, { maximumFractionDigits: 3 });
   const amt = Number(amount);
-  const amountOk = Number.isFinite(amt) && amt >= 1 && amt <= 100;
+  const amountOk = /^\d+(\.\d{1,18})?$/.test(amount) && amt >= 1 && amt <= 100;
   const left = live ? Math.max(0, live.deadline * 1000 - now) : 0;
   const clock = `${Math.floor(left / 60_000)}:${String(Math.floor((left % 60_000) / 1000)).padStart(2, '0')}`;
   const needed = live ? GOALS[live.goal].focusMinutes : 0;
+  const bonus = amountOk ? estimatedBonus(parseUnits(amount, 18), goal, balances.pot) : 0n;
 
   return (
     <main style={{ maxWidth: 460, margin: '48px auto', padding: '0 16px', fontFamily: 'system-ui', lineHeight: 1.5 }}>
       <h1>Bet on your focus</h1>
       <p>Stake test $CHOG that you&apos;ll focus. Your Chog watches. Hit the goal and win your stake plus a bonus; miss it and most of it feeds the reward pot. Testnet only, no real money.</p>
-      {!fromApp && search !== null && <p><b>Tip:</b> open this page from the Chog Buddy app so your Chog can report your focus.</p>}
+      {!fromApp && search !== null && <p><b>Open this page from the Chog Buddy app</b> (tray menu: Bet on my focus). Your Chog reports your focus, so a bet staked here alone could never win.</p>}
 
       {!account ? (
         <button onClick={connect} disabled={busy}>Connect wallet</button>
@@ -194,6 +246,10 @@ export default function Focus() {
             <section>
               <h2>Bet #{live.betId.toString()}: {live.status}</h2>
               {live.status === 'Open' && <p>Focus {live.minutes} / {needed} min · {clock} left</p>}
+              {live.status === 'Open' && handoffFailed && (
+                <p>Could not reach the Chog Buddy app. Keep it open, then <button onClick={resend} disabled={busy}>Send to the app again</button></p>
+              )}
+              {live.status === 'Open' && live.canRefund && <p>The server never settled this bet. <button onClick={refund} disabled={busy}>Refund my stake</button></p>}
               {live.status === 'Won' && <p>You did it! <button onClick={claim} disabled={busy}>Claim</button></p>}
               {live.status === 'Lost' && <p>Missed it this time. 10% was burned, 90% went to the reward pot.</p>}
               {live.status === 'Claimed' && <p>Claimed. Nice focus.</p>}
@@ -213,7 +269,8 @@ export default function Focus() {
               <p>
                 Stake <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" style={{ width: 70 }} /> mCHOG (1-100)
               </p>
-              <button onClick={stake} disabled={busy || !amountOk || !canPickGoal(goal, new Date(now))}>Stake</button>
+              {amountOk && <p>Win and you get your stake back plus about {fmt(bonus)} mCHOG.</p>}
+              <button onClick={stake} disabled={busy || !fromApp || !amountOk || bonus === 0n || !canPickGoal(goal, new Date(now))}>Stake</button>
             </section>
           )}
         </>

@@ -18,6 +18,31 @@ export function canPickGoal(goalId: GoalId, now: Date): boolean {
   return localMidnightDeadline(now) - Math.floor(now.getTime() / 1000) >= GOALS[goalId].focusMinutes * 60 + MINING_MARGIN_S;
 }
 
+// Same math as FocusPool._stake: the goal's share of the stake, capped at 1% of the free pot.
+export function estimatedBonus(amount: bigint, goalId: GoalId, potAvailable: bigint): bigint {
+  const bonus = (amount * BigInt(GOALS[goalId].bonusBps)) / 10_000n;
+  const cap = (potAvailable * 100n) / 10_000n;
+  return bonus < cap ? bonus : cap;
+}
+
+// Bets this browser staked, so a Won bet can be found for Claim and the key re-sent to the app.
+export type SavedBet = { betId: string; key: Hex };
+const SAVED_MAX = 20;
+
+export function parseSavedBets(raw: string | null): SavedBet[] {
+  try {
+    const list = JSON.parse(raw ?? '[]');
+    if (!Array.isArray(list)) return [];
+    return list.filter((b): b is SavedBet => /^\d+$/.test(b?.betId) && /^0x[0-9a-f]{64}$/i.test(b?.key));
+  } catch {
+    return [];
+  }
+}
+
+export function rememberBet(list: SavedBet[], bet: SavedBet): SavedBet[] {
+  return [bet, ...list.filter((b) => b.betId !== bet.betId)].slice(0, SAVED_MAX);
+}
+
 export function newProgressKey(): Hex {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return `0x${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
