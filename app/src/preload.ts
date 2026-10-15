@@ -4,6 +4,7 @@ import type { AnimName, SkinId, Trait } from '@chog/core';
 export type InitPayload = { imageBytes: Uint8Array; attributes: Trait[]; side: 'Left' | 'Right'; name: string; skin: SkinId };
 export type AnimPayload = { anim: AnimName; paused: boolean };
 export type ChatMode = 'chat' | 'key' | 'github' | 'ical';
+export type HistoryPayload = { name: string; messages: Array<{ role: string; content: string; at: number }>; diary: Array<{ day: string; text: string }> };
 
 const api = {
   onInit: (cb: (p: InitPayload) => void) => { ipcRenderer.on('init', (_e, p) => cb(p)); },
@@ -24,7 +25,7 @@ const api = {
   keySubmit: (key: string) => ipcRenderer.send('key-submit', key),
   chatClose: () => ipcRenderer.send('chat-close'),
   petClick: () => ipcRenderer.send('pet-click'),
-  onHistory: (cb: (p: { name: string; messages: Array<{ role: string; content: string; at: number }> }) => void) => { ipcRenderer.on('history-data', (_e, p) => cb(p)); },
+  onHistory: (cb: (p: HistoryPayload) => void) => { ipcRenderer.on('history-data', (_e, p) => cb(p)); },
 };
 
 contextBridge.exposeInMainWorld('chog', api);

@@ -1,4 +1,4 @@
-import type { ChogApi } from '../preload';
+import type { ChogApi, HistoryPayload } from '../preload';
 
 declare global {
   interface Window { chog: ChogApi }
@@ -6,18 +6,40 @@ declare global {
 
 const title = document.getElementById('title') as HTMLHeadingElement;
 const list = document.getElementById('list') as HTMLElement;
+const tabs = { chats: document.getElementById('tab-chats') as HTMLButtonElement, diary: document.getElementById('tab-diary') as HTMLButtonElement };
+let tab: keyof typeof tabs = 'chats';
+let last: HistoryPayload | null = null;
 
-// textContent only, never innerHTML: chat text is untrusted (a model can echo anything back).
-window.chog.onHistory(({ name, messages }) => {
-  title.textContent = `Chats with ${name}`;
+function empty(text: string) {
+  const p = document.createElement('p');
+  p.className = 'empty';
+  p.textContent = text;
+  list.append(p);
+}
+
+// textContent only, never innerHTML: chat and diary text is untrusted (a model can echo anything back).
+function render() {
+  for (const [k, b] of Object.entries(tabs)) b.setAttribute('aria-selected', String(k === tab));
   list.replaceChildren();
-  if (!messages.length) {
-    const empty = document.createElement('p');
-    empty.className = 'empty';
-    empty.textContent = 'No chats yet. Click your Chog to talk!';
-    list.append(empty);
+  if (!last) return;
+  const { name, messages, diary } = last;
+  if (tab === 'diary') {
+    title.textContent = `${name}'s diary`;
+    if (!diary.length) return empty('No diary entries yet. Your Chog writes one each evening.');
+    for (const e of diary) {
+      const card = document.createElement('article');
+      card.className = 'entry';
+      const h = document.createElement('h2');
+      h.textContent = new Date(`${e.day}T12:00`).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+      const text = document.createElement('div');
+      text.textContent = e.text;
+      card.append(h, text);
+      list.append(card);
+    }
     return;
   }
+  title.textContent = `Chats with ${name}`;
+  if (!messages.length) return empty('No chats yet. Click your Chog to talk!');
   for (const m of messages) {
     const bubble = document.createElement('div');
     bubble.className = `msg ${m.role === 'user' ? 'me' : 'chog'}`;
@@ -28,5 +50,10 @@ window.chog.onHistory(({ name, messages }) => {
     bubble.append(text, time);
     list.append(bubble);
   }
-  window.scrollTo(0, document.body.scrollHeight);
-});
+  if (follow) window.scrollTo(0, document.body.scrollHeight); // only when the reader was already at the bottom
+}
+
+for (const [k, b] of Object.entries(tabs)) b.addEventListener('click', () => { tab = k as keyof typeof tabs; window.scrollTo(0, 0); render(); });
+let follow = true;
+window.addEventListener('scroll', () => { follow = window.innerHeight + window.scrollY >= document.body.scrollHeight - 40; });
+window.chog.onHistory((p) => { last = p; render(); });
