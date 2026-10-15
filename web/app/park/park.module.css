@@ -1,0 +1,92 @@
+.main {
+  --hood: #6c4ab6;
+  --cream: #f6e9c7;
+  --ink: #2a1842;
+  --pink: #f48caa;
+  --bg: #faf6ff;
+  --card: #fff;
+  --muted: #6b5a85;
+  --line: #e4d9f5;
+
+  min-height: 100vh;
+  padding: 32px 16px 64px;
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+  color: var(--ink);
+  background: var(--bg);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  .main {
+    --bg: #17102a;
+    --card: #231a3d;
+    --ink: #f3ecff;
+    --muted: #b6a6d6;
+    --line: #382b5c;
+  }
+}
+
+.header { margin-bottom: 24px; }
+.header h1 { font-size: 2rem; color: var(--hood); }
+.header p { margin: 8px 0; color: var(--muted); }
+.header a { color: var(--hood); text-decoration: underline; }
+
+.board {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+.board h2 { font-size: 1.1rem; margin-bottom: 8px; }
+.board ol { padding-left: 1.4rem; }
+.board li { padding: 4px 0; }
+.board li span { margin-right: 8px; }
+.board li b { color: var(--hood); }
+
+.empty { color: var(--muted); }
+
+.grid {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 16px;
+  min-width: 0;
+}
+.card img,
+.noimg {
+  display: block;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 8px;
+  border-radius: 12px;
+  image-rendering: pixelated;
+}
+.noimg { background: var(--cream); }
+.card h3 { font-size: 1rem; text-align: center; overflow-wrap: anywhere; }
+.arch { text-align: center; color: var(--hood); font-size: 0.85rem; font-weight: 600; }
+.mood { text-align: center; font-style: italic; color: var(--muted); margin: 8px 0; font-size: 0.9rem; }
+.level { text-align: center; font-weight: 700; margin-bottom: 8px; }
+.axis { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 8px; font-size: 0.8rem; margin: 4px 0; }
+.axis meter { width: 100%; }
+
+.demo {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--pink);
+  color: var(--ink);
+  font-size: 0.7rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
