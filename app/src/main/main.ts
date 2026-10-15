@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, safeStorage, screen, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, powerMonitor, safeStorage, screen, shell, Tray } from 'electron';
 import path from 'node:path';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { ARCHETYPES, SKIN_IDS, categorize, fetchChogMetadata, ipfsToHttp, pickArchetype, type ArchetypeId, type ChogMetadata } from '@chog/core';
@@ -25,6 +25,7 @@ import { buildSystemPrompt } from './llm/prompt';
 import { createServerChat } from './llm/server';
 import { ChatSession, HISTORY_CAP, MAX_INPUT, pickProvider } from './llm/session';
 import { petdexFolderName, petdexManifest } from './petdex';
+import { createWipeGuard } from './wipe';
 
 const W = 192;
 const H = 260; // 208 sprite + room for the speech bubble
@@ -66,11 +67,13 @@ const warned = new Set<number>();
 let diaryBusy: Promise<DiaryEntry> | null = null;
 let historyWin: BrowserWindow | null = null;
 let startedJudge = false; // the previous run was Judge Mode: its token was never owned, so nothing to wipe
+const wipes = createWipeGuard();
 
 // The previously active token is no longer owned: its diary and chat history must not outlive it.
 function checkLost(owned: number[]): boolean {
   if (startedJudge || decideOwnership(settings.tokenId, owned) !== 'lost') return false;
   const userData = app.getPath('userData');
+  wipes.bump();
   wipeDiary(userData);
   wipeChatLog(userData);
   return true;
@@ -108,6 +111,8 @@ function closeChat() {
   chatOpen = false;
   win.setFocusable(false);
   win.blur();
+  // ponytail: app.hide returns focus to the previous app; showInactive keeps the pet visible. Revisit if a flicker shows.
+  if (process.platform === 'darwin' && !BrowserWindow.getAllWindows().some((w) => w !== win && w.isVisible())) { app.hide(); win.showInactive(); }
   win.webContents.send('chat-closed');
 }
 
@@ -116,16 +121,18 @@ async function refreshOllamaModels() {
   rebuildMenu?.();
 }
 
+// Ollama or Gemini only. Never the server provider: it ignores system prompts and spends the shared daily cap.
+async function localLine(system: string, user: string): Promise<string> {
+  const p = await pickProvider(settings.chat.provider, [createOllama({ model: settings.chat.ollamaModel }), createGemini({ apiKey: geminiKey() })]);
+  if (!p) throw new Error('no provider');
+  return p.stream(system, [{ role: 'user', content: user }], () => {});
+}
+
 async function say(trigger: Trigger) {
   const template = pickLine(archetype, trigger, lastCategory);
-  const line = await flavourLine({
+  const line = trigger === 'pet' ? template : await flavourLine({ // a poke answers instantly, no model round trip
     template, rand: Math.random,
-    generate: async () => {
-      // Never the server provider: it ignores system prompts and spends the shared daily cap.
-      const p = await pickProvider(settings.chat.provider, [createOllama({ model: settings.chat.ollamaModel }), createGemini({ apiKey: geminiKey() })]);
-      if (!p) throw new Error('no provider');
-      return p.stream(flavourPrompt({ chogName: meta.name, archetype, trigger, category: lastCategory, template }), [{ role: 'user', content: 'React now.' }], () => {});
-    },
+    generate: () => localLine(flavourPrompt({ chogName: meta.name, archetype, trigger, category: lastCategory, template }), 'React now.'),
   });
   if (chatOpen || inFlightChat) return; // a chat opened while the line was generating: drop the line
   win?.webContents.send('say', line);
@@ -151,26 +158,34 @@ function ensureDiary(): Promise<DiaryEntry> {
     const day = dayKey(new Date());
     const saved = loadDiary(userData).find((e) => e.tokenId === tokenId && e.day === day);
     if (saved) return saved;
+    const e0 = wipes.epoch();
     const token = currentToken();
     const r = await writeDiary({
       remote: () => (judge || !token ? Promise.reject(new Error('judge/signed-out')) : createApi({ baseUrl: apiUrl(), token }).diary({ tokenId, totals: settings.today.totals })),
-      local: async () => {
-        const p = await pickProvider(settings.chat.provider, [createOllama({ model: settings.chat.ollamaModel }), createGemini({ apiKey: geminiKey() })]);
-        if (!p) throw new Error('no provider');
-        return p.stream(localDiaryPrompt({ chogName: meta.name, archetype, totals: settings.today.totals }), [{ role: 'user', content: "Write today's entry." }], () => {});
-      },
+      local: () => localLine(localDiaryPrompt({ chogName: meta.name, archetype, totals: settings.today.totals }), "Write today's entry."),
       template: pickLine(archetype, 'idle_return', lastCategory),
     });
     const entry = { day, tokenId, text: r.text };
-    appendDiary(userData, entry);
+    if (!wipes.stale(e0)) { appendDiary(userData, entry); sendHistory(); } // a wipe while it wrote: show it, never save it
     return entry;
   })().finally(() => { diaryBusy = null; });
   return diaryBusy;
 }
 
 async function showDiary() {
-  const entry = await ensureDiary();
   openChat('chat');
+  win?.webContents.send('chat-replace', '📔 Writing my diary…'); // the model can take a while
+  let entry: DiaryEntry;
+  try {
+    entry = await ensureDiary();
+  } catch (e) {
+    if (!inFlightChat) {
+      win?.webContents.send('chat-replace', '📔 I could not write my diary.'); // don't leave "Writing…" up forever
+      win?.webContents.send('chat-done', { failed: true });
+    }
+    throw e; // the tray handler still shows the error dialog
+  }
+  if (inFlightChat) return; // the owner started chatting while it wrote: never clobber that reply
   win?.webContents.send('chat-replace', `📔 ${entry.text}`); // replace, not append: the bubble may still hold an old line
   win?.webContents.send('chat-done', { failed: false });
 }
@@ -203,19 +218,30 @@ function relaunch() {
   app.exit(0);
 }
 
+// Live: called on load and after every saved chat turn, diary entry or clear, so an open window never goes stale.
+function sendHistory() {
+  if (!historyWin || historyWin.isDestroyed()) return;
+  const userData = app.getPath('userData');
+  historyWin.webContents.send('history-data', {
+    name: meta.name,
+    messages: forToken(loadChatLog(userData, cipher), tokenId),
+    diary: loadDiary(userData).filter((e) => e.tokenId === tokenId).map(({ day, text }) => ({ day, text })).reverse(), // newest first
+  });
+}
+
 function openHistory() {
   if (process.platform === 'darwin') app.focus({ steal: true });
   if (historyWin) {
     historyWin.focus();
     return;
   }
-  const w = new BrowserWindow({ width: 380, height: 520, title: 'Chog chat history', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs') } });
+  const w = new BrowserWindow({ width: 380, height: 520, title: 'Chog chat history & diary', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs') } });
   historyWin = w;
   w.webContents.on('will-navigate', (e) => e.preventDefault());
   w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   w.on('closed', () => { historyWin = null; });
   w.loadFile(path.join(__dirname, 'history.html'))
-    .then(() => w.webContents.send('history-data', { name: meta.name, messages: forToken(loadChatLog(app.getPath('userData'), cipher), tokenId) }))
+    .then(() => sendHistory())
     .catch(() => {}); // closed before it finished loading
 }
 
@@ -285,6 +311,7 @@ async function resolveChoice(choice: Startup, base: string): Promise<{ tokenId: 
       return { tokenId: JUDGE_TOKEN_ID, judge: true };
     }
     try {
+      if (Notification.isSupported()) new Notification({ title: 'Chog Buddy', body: 'Finish signing in in your browser. This window waits up to 5 minutes.' }).show(); // never the URL or state
       const s = await startSignIn({ apiUrl: base, open: (u) => void shell.openExternal(u).catch(() => {}) });
       const tokenEnc = seal(cipher, s.token);
       if (!tokenEnc) throw new Error('Secure storage unavailable');
@@ -463,14 +490,22 @@ async function start() {
       // Yesterday's final totals go up on the first tick after midnight, not at the next hourly slot.
       if (settings.yesterday || uploadDue(settings.lastUpload, Date.now())) {
         const jobs = uploadsFor({ judge, signedIn: !!token, tokenId, today: settings.today, yesterday: settings.yesterday });
-        try {
-          for (const j of jobs) await api.uploadActivity(j);
-          if (jobs.length) { settings.lastUpload = Date.now(); settings.yesterday = null; } // only once every job succeeded
-        } catch (e) {
-          if (e instanceof ApiError && e.status === 401) { await expireSession(); return; }
-          if (e instanceof ApiError && e.status === 400) settings.yesterday = null; // too old for the backend, it can never be sent
-          else if (e instanceof ApiError && e.status === 403) settings.lastOwnershipCheck = 0; // re-check ownership now
-          // anything else: retry next tick
+        // Each day settles on its own: a bad today must not keep yesterday from clearing, or the reverse.
+        for (const j of jobs) {
+          try {
+            await api.uploadActivity(j);
+            if (j.day === settings.yesterday?.day) settings.yesterday = null;
+            else settings.lastUpload = Date.now();
+          } catch (e) {
+            if (e instanceof ApiError && e.status === 401) { await expireSession(); return; }
+            if (e instanceof ApiError && e.status === 403) { settings.lastOwnershipCheck = 0; break; } // re-check ownership now
+            if (e instanceof ApiError && e.status === 400) {
+              if (j.day === settings.yesterday?.day) settings.yesterday = null; // too old: can never be sent
+              else settings.lastUpload = Date.now(); // bad today payload: wait for the next hourly slot instead of hammering
+              continue;
+            }
+            break; // network/5xx: retry next tick
+          }
         }
       }
       if (token && ownershipCheckDue(settings.lastOwnershipCheck, Date.now())) {
@@ -586,13 +621,15 @@ async function start() {
           label: "Today's diary",
           click: () => void showDiary().catch((e) => dialog.showErrorBox('Chog Buddy', `Could not write today's diary.\n\n${(e as Error).message}`)),
         },
-        { label: 'Chat history…', click: () => openHistory() },
+        { label: 'Open Chog Park', click: () => void shell.openExternal(`${apiUrl()}/park`).catch(() => {}) },
+        { label: 'Chat history & diary…', click: () => openHistory() },
         {
           label: 'Clear chat history',
           click: () => {
+            wipes.bump();
             wipeChatLog(userData);
             if (chat) chat.history = [];
-            historyWin?.close();
+            sendHistory(); // the diary tab stays useful, so keep the window open
           },
         },
         {
@@ -622,6 +659,7 @@ async function start() {
           click: () => {
             settings.session = null;
             settings.judgeMode = false;
+            wipes.bump();
             wipeDiary(userData);
             wipeChatLog(userData);
             relaunch();
@@ -666,17 +704,20 @@ ipcMain.on('chat-send', async (e, text: unknown) => {
   inFlightChat = true;
   try {
     talkUntil = Date.now() + 60_000;
+    const e0 = wipes.epoch();
     const r = await chat.send(text, (t) => {
       talkUntil = Date.now() + TALK_MS;
       win?.webContents.send('chat-token', t);
     });
     if (r.failed) win?.webContents.send('chat-replace', r.reply);
+    else if (wipes.stale(e0)) chat.history = []; // wiped while streaming: never recreate the log, not even in memory
     else if (r.reply) {
       try {
         appendChatLog(app.getPath('userData'), cipher, [
           { role: 'user', content: text.trim().slice(0, MAX_INPUT), at: Date.now(), tokenId },
           { role: 'assistant', content: r.reply, at: Date.now(), tokenId },
         ]);
+        sendHistory();
       } catch {
         console.warn('Chog Buddy: could not save chat history'); // the chat itself still works
       }
@@ -687,7 +728,7 @@ ipcMain.on('chat-send', async (e, text: unknown) => {
     inFlightChat = false;
   }
 });
-ipcMain.on('chat-close', () => closeChat());
+ipcMain.on('chat-close', (e) => { if (e.sender !== win?.webContents) return; closeChat(); });
 ipcMain.on('key-submit', (e, key: unknown) => {
   if (e.sender !== win?.webContents) return;
   const mode = secretMode; // routed by the mode main opened, never by the renderer

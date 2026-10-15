@@ -1,4 +1,5 @@
 import { ARCHETYPES, type ArchetypeId, type Category, type DailyTotals } from '@chog/core';
+import { generateText, type LlmSource } from './llm';
 
 export const VOICE: Record<ArchetypeId, string> = {
   hype: 'over-the-top hype friend, all caps energy, supportive',
@@ -49,27 +50,11 @@ export async function generateDiary(
   t: DailyTotals,
   fetchImpl: typeof fetch = fetch,
   timeoutMs = 10_000, // overloaded models can hang 15s+; fall back to the template instead
-  allowGemini = true, // false once the caller is over its daily Gemini cap
-): Promise<{ text: string; source: 'gemini' | 'template' }> {
-  const key = allowGemini ? process.env.GEMINI_API_KEY : undefined;
-  // A "-latest" alias never gets retired the way pinned versions do (gemini-2.5-flash is closed to new keys).
-  const model = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
-  if (key) {
-    try {
-      const res = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({ contents: [{ parts: [{ text: buildDiaryPrompt(archetype, chogName, t) }] }] }),
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      if (res.ok) {
-        const json = await res.json();
-        const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (typeof text === 'string' && text.trim()) return { text: text.trim(), source: 'gemini' };
-      }
-    } catch {
-      // fall through to template
-    }
-  }
-  return { text: templateDiary(archetype, t), source: 'template' };
+  allowGemini = true, // false once the caller is over its daily Gemini cap; backups follow it (the cap is per wallet)
+): Promise<{ text: string; source: LlmSource | 'template' }> {
+  const r = await generateText(
+    { turns: [{ role: 'user', text: buildDiaryPrompt(archetype, chogName, t) }], maxTokens: 300 },
+    { fetchImpl, timeoutMs, allowGemini, allowBackup: allowGemini },
+  );
+  return r ?? { text: templateDiary(archetype, t), source: 'template' };
 }
