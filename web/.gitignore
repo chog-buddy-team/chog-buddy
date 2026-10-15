@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Tooling files (Next.js agent note, design-tool state)
+AGENTS.md
+.impeccable/

@@ -26,7 +26,7 @@ export const NEW_BET_GRACE_MS = 120_000;
 
 export type ProgressOutcome = 'continue' | 'won' | 'stop' | 'check';
 
-// docs/focus-bets-for-farouk.md section 5. Status 0 = network error.
+// the Focus Bets progress API contract (server rules in web/lib/focus.ts). Status 0 = network error.
 export function decideReport(status: number, body: { status?: string; error?: string }, ageMs: number): ProgressOutcome {
   if (status === 200) return body.status === 'Open' ? 'continue' : body.status === 'Won' ? 'won' : 'check';
   if (status === 404) return ageMs < NEW_BET_GRACE_MS ? 'continue' : 'stop';
