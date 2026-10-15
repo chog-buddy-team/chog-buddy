@@ -1,10 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import { createPublicClient, createWalletClient, custom, formatUnits, http, parseAbi, parseSignature, parseUnits, type Address, type Hex } from 'viem';
+import { createPublicClient, createWalletClient, custom, formatUnits, http, parseAbi, parseEventLogs, parseSignature, parseUnits, type Address, type Hex } from 'viem';
 import { monadTestnet } from '@chog/core';
 import { GOALS, STATUSES, keyHashOf, type GoalId } from '@/lib/focus';
-import { canPickGoal, estimatedBonus, localMidnightDeadline, newProgressKey, parseSavedBets, rememberBet, type SavedBet } from '@/lib/focus-page';
+import { canPickGoal, estimatedBonus, keyForBet, localMidnightDeadline, minBonusFor, newProgressKey, parseSavedBets, rememberBet, type SavedBet } from '@/lib/focus-page';
 
 declare global {
   interface Window { ethereum?: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } }
@@ -21,14 +21,14 @@ const tokenAbi = parseAbi([
   'function nonces(address) view returns (uint256)',
 ]);
 const poolAbi = parseAbi([
-  'function stakeWithPermit(uint8 goal, uint96 amount, uint40 deadline, bytes32 progressKeyHash, uint256 permitDeadline, uint8 v, bytes32 r, bytes32 s) returns (uint256)',
+  'function stakeWithPermit(uint8 goal, uint96 amount, uint40 deadline, bytes32 progressKeyHash, uint96 minBonus, uint256 permitDeadline, uint8 v, bytes32 r, bytes32 s) returns (uint256)',
+  'event Staked(uint256 indexed betId, address indexed bettor, uint8 goal, uint96 amount, uint40 deadline, uint96 bonus, bytes32 progressKeyHash)',
   'function claim(uint256 betId)',
   'function refund(uint256 betId)',
   'function canRefund(uint256 betId) view returns (bool)',
   'struct Bet { address bettor; uint96 amount; uint40 start; uint40 deadline; uint96 bonus; uint8 goal; uint8 status; bytes32 progressKeyHash; }',
   'function getBet(uint256 betId) view returns (Bet)',
   'function openBetOf(address) view returns (uint256)',
-  'function nextBetId() view returns (uint256)',
   'function potAvailable() view returns (uint256)',
 ]);
 
@@ -41,6 +41,7 @@ const serverSearch = () => null;
 async function mined(hash: Hex) {
   const r = await reader.waitForTransactionReceipt({ hash });
   if (r.status !== 'success') throw new Error('The transaction reverted.');
+  return r;
 }
 
 const savedKey = (a: Address) => `focus-bets:${POOL}:${a}`.toLowerCase();
@@ -76,6 +77,7 @@ export default function Focus() {
   const [live, setLive] = useState<Live | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [handoffFailed, setHandoffFailed] = useState(false);
+  const [hasKey, setHasKey] = useState(false);
 
   const wallet = useCallback(() => createWalletClient({ chain: monadTestnet, transport: custom(window.ethereum!) }), []);
 
@@ -134,7 +136,14 @@ export default function Focus() {
       setAccount(a);
       await refresh(a);
       const open = await reader.readContract({ address: POOL, abi: poolAbi, functionName: 'openBetOf', args: [a] });
-      if (open > 0n) return poll(open, 0);
+      if (open > 0n) {
+        // The key may have been saved before the stake was mined; match it by the onchain hash.
+        const bet = await reader.readContract({ address: POOL, abi: poolAbi, functionName: 'getBet', args: [open] });
+        const key = keyForBet(loadSaved(a), open, bet.progressKeyHash);
+        if (key) saveBet(a, { betId: open.toString(), key });
+        setHasKey(key !== null);
+        return poll(open, bet.goal as GoalId);
+      }
       // No open bet: look for a win this browser staked that still waits for Claim.
       const saved = loadSaved(a);
       const bets = await Promise.all(saved.map((b) => reader.readContract({ address: POOL, abi: poolAbi, functionName: 'getBet', args: [BigInt(b.betId)] }).catch(() => null)));
@@ -184,17 +193,21 @@ export default function Focus() {
         message: { owner: a, spender: POOL, value, nonce, deadline: permitDeadline },
       });
       const { v, r, s } = parseSignature(sig);
-      const betId = await reader.readContract({ address: POOL, abi: poolAbi, functionName: 'nextBetId' });
+      const pot = await reader.readContract({ address: POOL, abi: poolAbi, functionName: 'potAvailable' });
+      const minBonus = minBonusFor(estimatedBonus(value, goal, pot));
+      if (minBonus === 0n) throw new Error('The reward pot is empty right now.');
+      // Saved before the tx, so a failed receipt wait or a closed tab can't lose the key; connect() finds it by hash.
+      saveBet(a, { betId: '0', key });
       const hash = await wallet().writeContract({
         account: a, address: POOL, abi: poolAbi, functionName: 'stakeWithPermit',
-        args: [goal, value, deadline, keyHashOf(key), permitDeadline, Number(v), r, s],
+        args: [goal, value, deadline, keyHashOf(key), minBonus, permitDeadline, Number(v), r, s],
       });
       setLinks((l) => [...l, { label: 'Stake', hash }]);
-      await mined(hash);
-      // nextBetId may have moved if someone else staked at the same moment; openBetOf is authoritative.
-      const mine = await reader.readContract({ address: POOL, abi: poolAbi, functionName: 'openBetOf', args: [a] });
-      const id = mine > 0n ? mine : betId;
+      const receipt = await mined(hash);
+      const [staked] = parseEventLogs({ abi: poolAbi, eventName: 'Staked', logs: receipt.logs });
+      const id = staked.args.betId;
       saveBet(a, { betId: id.toString(), key });
+      setHasKey(true);
       await sendToApp(id, key);
       await refresh(a);
       await poll(id, goal);
@@ -246,8 +259,11 @@ export default function Focus() {
             <section>
               <h2>Bet #{live.betId.toString()}: {live.status}</h2>
               {live.status === 'Open' && <p>Focus {live.minutes} / {needed} min · {clock} left</p>}
-              {live.status === 'Open' && handoffFailed && (
-                <p>Could not reach the Chog Buddy app. Keep it open, then <button onClick={resend} disabled={busy}>Send to the app again</button></p>
+              {live.status === 'Open' && fromApp && hasKey && (
+                <p>
+                  {handoffFailed ? 'Could not reach the Chog Buddy app. Keep it open, then ' : 'App not reporting? '}
+                  <button onClick={resend} disabled={busy}>Send to the app again</button>
+                </p>
               )}
               {live.status === 'Open' && live.canRefund && <p>The server never settled this bet. <button onClick={refund} disabled={busy}>Refund my stake</button></p>}
               {live.status === 'Won' && <p>You did it! <button onClick={claim} disabled={busy}>Claim</button></p>}

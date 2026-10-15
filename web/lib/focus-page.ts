@@ -1,5 +1,5 @@
 import type { Hex } from 'viem';
-import { GOALS, type GoalId } from './focus';
+import { GOALS, keyHashOf, type GoalId } from './focus';
 
 const nextLocalMidnight = (now: Date) =>
   Math.floor(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0).getTime() / 1000);
@@ -23,6 +23,16 @@ export function estimatedBonus(amount: bigint, goalId: GoalId, potAvailable: big
   const bonus = (amount * BigInt(GOALS[goalId].bonusBps)) / 10_000n;
   const cap = (potAvailable * 100n) / 10_000n;
   return bonus < cap ? bonus : cap;
+}
+
+// Other stakes can shrink the free pot between the estimate and the mined stake; accept 5% of that.
+export const minBonusFor = (estimate: bigint): bigint => (estimate * 95n) / 100n;
+
+// betId '0' marks a key saved before its stake was mined; the onchain progressKeyHash identifies it later.
+export function keyForBet(list: SavedBet[], betId: bigint, progressKeyHash: Hex): Hex | null {
+  const byId = list.find((b) => b.betId === betId.toString());
+  if (byId) return byId.key;
+  return list.find((b) => keyHashOf(b.key).toLowerCase() === progressKeyHash.toLowerCase())?.key ?? null;
 }
 
 // Bets this browser staked, so a Won bet can be found for Claim and the key re-sent to the app.

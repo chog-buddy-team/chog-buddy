@@ -1,5 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { canPickGoal, estimatedBonus, localMidnightDeadline, newProgressKey, parseSavedBets, rememberBet } from '@/lib/focus-page';
+import { keyHashOf } from '@/lib/focus';
+import { canPickGoal, estimatedBonus, keyForBet, localMidnightDeadline, minBonusFor, newProgressKey, parseSavedBets, rememberBet } from '@/lib/focus-page';
+
+describe('minBonusFor', () => {
+  it('accepts up to 5% less than the estimate', () => {
+    expect(minBonusFor(100n)).toBe(95n);
+    expect(minBonusFor(0n)).toBe(0n);
+  });
+});
+
+describe('keyForBet', () => {
+  const k1 = `0x${'11'.repeat(32)}` as const;
+  const k2 = `0x${'22'.repeat(32)}` as const;
+  it('finds the key saved under the bet id', () => {
+    expect(keyForBet([{ betId: '7', key: k1 }], 7n, keyHashOf(k2))).toBe(k1);
+  });
+  it('finds a key saved before the bet id was known by its onchain hash', () => {
+    expect(keyForBet([{ betId: '0', key: k1 }, { betId: '0', key: k2 }].slice(1), 9n, keyHashOf(k2))).toBe(k2);
+  });
+  it('returns null when no saved key matches', () => {
+    expect(keyForBet([{ betId: '0', key: k1 }], 9n, keyHashOf(k2))).toBeNull();
+  });
+});
 
 const local = (h: number, m: number) => new Date(2026, 9, 14, h, m, 0);
 const secs = (d: Date) => Math.floor(d.getTime() / 1000);
