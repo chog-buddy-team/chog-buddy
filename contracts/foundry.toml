@@ -6,3 +6,7 @@ solc_version = "0.8.24"
 
 [rpc_endpoints]
 monad_testnet = "https://testnet-rpc.monad.xyz"
+
+[invariant]
+runs = 64
+depth = 200
