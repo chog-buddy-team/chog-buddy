@@ -21,7 +21,8 @@ export async function POST(req: Request) {
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 502 });
   }
+  const underCaller = mine <= caps.perCaller;
   return Response.json(
-    await generateChat(pickArchetype(meta), meta.name, body.messages, fetch, undefined, mine <= caps.perCaller && everyone <= caps.global),
+    await generateChat(pickArchetype(meta), meta.name, body.messages, fetch, undefined, underCaller && everyone <= caps.global, underCaller),
   );
 }

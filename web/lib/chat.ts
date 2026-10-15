@@ -1,5 +1,6 @@
 import { ARCHETYPES, assertTokenId, type ArchetypeId } from '@chog/core';
 import { VOICE } from './diary';
+import { generateText, type LlmSource } from './llm';
 
 export type ChatMessage = { role: 'user' | 'model'; text: string };
 
@@ -52,29 +53,11 @@ export async function generateChat(
   fetchImpl: typeof fetch = fetch,
   timeoutMs = 10_000,
   allowGemini = true, // false once a daily cap is hit
-): Promise<{ text: string; source: 'gemini' | 'fallback' }> {
-  const key = allowGemini ? process.env.GEMINI_API_KEY : undefined;
-  const model = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
-  if (key) {
-    try {
-      const res = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: buildChatSystemPrompt(archetype, chogName) }] },
-          contents: messages.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
-          generationConfig: { maxOutputTokens: 100 }, // backstop; the prompt asks for 25 words
-        }),
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      if (res.ok) {
-        const json = await res.json();
-        const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (typeof text === 'string' && text.trim()) return { text: text.trim(), source: 'gemini' };
-      }
-    } catch {
-      // fall through to the in-character fallback
-    }
-  }
-  return { text: fallbackReply(archetype), source: 'fallback' };
+  allowBackup = allowGemini, // free backups (Groq, OpenRouter); false once the caller's own cap is hit
+): Promise<{ text: string; source: LlmSource | 'fallback' }> {
+  const r = await generateText(
+    { system: buildChatSystemPrompt(archetype, chogName), turns: messages, maxTokens: 100 }, // backstop; the prompt asks for 25 words
+    { fetchImpl, timeoutMs, allowGemini, allowBackup },
+  );
+  return r ?? { text: fallbackReply(archetype), source: 'fallback' };
 }

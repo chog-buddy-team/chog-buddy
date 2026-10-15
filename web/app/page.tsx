@@ -1,69 +1,47 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+import Link from 'next/link';
+import ui from './ui/sticker.module.css';
+import s from './page.module.css';
+
+const RELEASES = 'https://github.com/faroukobayanju/chog-buddy/releases';
+
+// The skin stickers scattered around the hero, each with its own short label sticker.
+const SCATTER = [
+  { img: 'chog-hoodie', alt: 'Chog in a blue hoodie, talking', label: 'Reacts to your day', spot: s.spotA },
+  { img: 'chog-jacket', alt: 'Chog in a red jacket, eyes closed, writing', label: 'Keeps a private diary', spot: s.spotB },
+  { img: 'chog-dress', alt: 'Chog in a lavender dress, cheering', label: 'Grows an onchain Soul', spot: s.spotC },
+];
 
 export default function Home() {
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>
-            To get started, edit the{" "}
-            <code className={styles.code}>page.tsx</code> file.
-          </h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className={`${ui.page} ${s.main}`}>
+      <section className={s.hero}>
+        <div className={s.copy}>
+          <h1 className={`${ui.lettering} ${s.title}`}>Chog<br />Buddy</h1>
+          <p className={s.hook}>Your Chog NFT, alive on your desktop.</p>
+          <p className={s.sub}>A pixel Chog that walks your taskbar, reacts to your day, keeps a diary that never leaves your computer, and grows a Soul on Monad. No Chog, no buddy: the pet is the NFT.</p>
+          <nav className={s.actions} aria-label="Get started">
+            <a className={ui.btn} href={RELEASES} target="_blank" rel="noopener noreferrer">Get Chog Buddy</a>
+            <Link className={ui.btnQuiet} href="/park">Visit Chog Park</Link>
+          </nav>
+          <p className={`${ui.label} ${s.platforms}`}>Mac + Windows · Free · Judge Mode included</p>
         </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <div className={s.stage}>
+          <img className={`${ui.cutout} ${s.heroChog}`} src="/chog/chog-classic.png" alt="The canonical pixel Chog: purple spiky hood, cream face, pink blush" width={256} height={376} />
+          <p className={`${ui.sticker} ${s.bubble}`}>gm! I live on your taskbar now.</p>
+          {SCATTER.map((t) => (
+            <figure key={t.img} className={`${s.spot} ${t.spot}`}>
+              <img className={ui.cutout} src={`/chog/${t.img}.png`} alt={t.alt} width={128} height={188} />
+              <figcaption className={`${ui.sticker} ${s.tag}`}>{t.label}</figcaption>
+            </figure>
+          ))}
         </div>
-      </main>
-    </div>
+      </section>
+
+      <p className={`${ui.sticker} ${ui.peel} ${s.privacy}`}>
+        <strong>Private by default.</strong> Only minutes per category (coding, video, meetings…) leave your computer. App names, window titles and the diary never do.
+      </p>
+
+      <footer className={`${ui.label} ${s.footer}`}>Chogathon 2026 · Chog Genesis on Monad · Souls on Monad testnet</footer>
+    </main>
   );
 }

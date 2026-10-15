@@ -1,0 +1,410 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-15T00:00:00Z",
+  "title": "Design System: Chog Buddy",
+  "extensions": {
+    "colorMeta": {
+      "hood": {
+        "role": "primary",
+        "displayName": "Chog Hood Purple",
+        "canonical": "#6c4ab6",
+        "tonalRamp": [
+          "#10002c",
+          "#2b0e58",
+          "#4a2789",
+          "#6947b3",
+          "#8a6ad9",
+          "#ac8eff",
+          "#cfb5ff",
+          "#f3dfff"
+        ]
+      },
+      "hood-deep": {
+        "role": "primary",
+        "displayName": "Deep Hood",
+        "canonical": "#563a98",
+        "tonalRamp": [
+          "#0f0129",
+          "#291454",
+          "#472d82",
+          "#664cac",
+          "#876ed1",
+          "#a992f8",
+          "#ccb8ff",
+          "#f1e2ff"
+        ]
+      },
+      "pink": {
+        "role": "secondary",
+        "displayName": "Blush Pink",
+        "canonical": "#f48caa",
+        "tonalRamp": [
+          "#200009",
+          "#470721",
+          "#721d3d",
+          "#9a3b5b",
+          "#c05d7c",
+          "#e7809e",
+          "#ffa8c3",
+          "#ffd5e9"
+        ]
+      },
+      "cream": {
+        "role": "tertiary",
+        "displayName": "Chog Cream",
+        "canonical": "#f6e9c7",
+        "tonalRamp": [
+          "#0f0b01",
+          "#2c2410",
+          "#4b4126",
+          "#6c6042",
+          "#8d8162",
+          "#b1a484",
+          "#d4c8aa",
+          "#f7eed6"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Chog Ink",
+        "canonical": "#2a1842",
+        "tonalRamp": [
+          "#0e061a",
+          "#2a1e3c",
+          "#483862",
+          "#695786",
+          "#8a78aa",
+          "#ad9ace",
+          "#d0bff0",
+          "#f4e7ff"
+        ]
+      },
+      "ink-soft": {
+        "role": "neutral",
+        "displayName": "Soft Ink",
+        "canonical": "#4a3570",
+        "tonalRamp": [
+          "#0e051e",
+          "#2a1b43",
+          "#48356c",
+          "#685492",
+          "#8a75b6",
+          "#ac98db",
+          "#d0bdfc",
+          "#f4e5ff"
+        ]
+      },
+      "vinyl": {
+        "role": "neutral",
+        "displayName": "Vinyl White",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "on-sheet": {
+        "role": "neutral",
+        "displayName": "Sheet Paper",
+        "canonical": "#fffaf0",
+        "tonalRamp": [
+          "#0d0b08",
+          "#27251f",
+          "#45423a",
+          "#656158",
+          "#868279",
+          "#a9a49b",
+          "#cdc9c0",
+          "#f2eee7"
+        ]
+      },
+      "on-sheet-soft": {
+        "role": "neutral",
+        "displayName": "Sheet Lilac",
+        "canonical": "#e7dcff",
+        "tonalRamp": [
+          "#0d0815",
+          "#282134",
+          "#453d57",
+          "#655b79",
+          "#867c9c",
+          "#a99fc0",
+          "#cdc3e2",
+          "#f2eaff"
+        ]
+      },
+      "on-sheet-soft-night": {
+        "role": "neutral",
+        "displayName": "Sheet Lilac (night)",
+        "canonical": "#cfc0f0",
+        "tonalRamp": [
+          "#0e0718",
+          "#291f3a",
+          "#473a5f",
+          "#675883",
+          "#8879a6",
+          "#ab9cca",
+          "#cec1ec",
+          "#f3e8ff"
+        ]
+      },
+      "letter-night": {
+        "role": "neutral",
+        "displayName": "Night Lettering",
+        "canonical": "#9b78e6",
+        "tonalRamp": [
+          "#11002b",
+          "#2d0e56",
+          "#4c2786",
+          "#6c47b0",
+          "#8d69d6",
+          "#b08dfd",
+          "#d2b4ff",
+          "#f5dfff"
+        ]
+      },
+      "bar-track": {
+        "role": "neutral",
+        "displayName": "Bar Track",
+        "canonical": "#efe6fb",
+        "tonalRamp": [
+          "#0d0911",
+          "#27222e",
+          "#453e4e",
+          "#655d6f",
+          "#867e91",
+          "#a9a1b4",
+          "#cdc5d8",
+          "#f2ebfa"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Sticker Lettering",
+        "purpose": "Page titles; white-stroked on the sheet, flat hood-deep on vinyl."
+      },
+      "headline": {
+        "displayName": "Foil Headline",
+        "purpose": "Leaderboard title."
+      },
+      "title": {
+        "displayName": "Sticker Title",
+        "purpose": "Chog names, button text, label stickers, rank numerals."
+      },
+      "hook": {
+        "displayName": "Hook",
+        "purpose": "One-line promise under hero lettering."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Paragraphs, 44–62ch."
+      },
+      "label": {
+        "displayName": "Print Code",
+        "purpose": "Uppercase mono for ids, levels, minutes, platforms."
+      }
+    },
+    "shadows": [
+      {
+        "name": "lift",
+        "value": "0 1px 0 rgb(42 24 66 / 0.18), 0 14px 28px -12px rgb(20 8 40 / 0.55)",
+        "purpose": "Every sticker and button at rest."
+      },
+      {
+        "name": "lift-hover",
+        "value": "0 1px 0 rgb(42 24 66 / 0.18), 0 22px 36px -14px rgb(20 8 40 / 0.6)",
+        "purpose": "Button hover."
+      },
+      {
+        "name": "cutout",
+        "value": "drop-shadow(5px 0 0 #fff) drop-shadow(-5px 0 0 #fff) drop-shadow(0 5px 0 #fff) drop-shadow(0 -5px 0 #fff) drop-shadow(0 16px 18px rgb(20 8 40 / 0.45))",
+        "purpose": "Pixel sprite kiss-cut outline plus soft drop (filter)."
+      },
+      {
+        "name": "bubble",
+        "value": "0 6px 14px -6px rgb(20 8 40 / 0.35)",
+        "purpose": "Mood bubble over art."
+      },
+      {
+        "name": "lettering",
+        "value": "0 0.09em 0.12em rgb(20 8 40 / 0.35)",
+        "purpose": "Display lettering text-shadow on the sheet."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Shared ease for every transition and keyframe."
+      },
+      {
+        "name": "button",
+        "value": "0.35s",
+        "purpose": "Button lift and tilt."
+      },
+      {
+        "name": "sticker-straighten",
+        "value": "0.5s",
+        "purpose": "Album sticker straighten on hover; peel flap."
+      },
+      {
+        "name": "stick",
+        "value": "1.1s",
+        "purpose": "Hero sprite pressed onto the sheet, once."
+      },
+      {
+        "name": "peel-wait",
+        "value": "1.4s infinite alternate",
+        "purpose": "Peeled corner lifting while waiting."
+      },
+      {
+        "name": "foil-sheen",
+        "value": "scroll(root block), --sheen 20deg to 260deg",
+        "purpose": "Foil angle driven by scroll; off under reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "tiny",
+        "value": "380px"
+      },
+      {
+        "name": "mobile",
+        "value": "600px"
+      },
+      {
+        "name": "stack",
+        "value": "860px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Pink vinyl sticker-button for the one primary action.",
+      "html": "<button class=\"ds-btn\">Get Chog Buddy</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;gap:10px;min-height:52px;padding:0 24px;border:4px solid var(--vinyl,#fff);border-radius:999px;color:var(--ink,#2a1842);font-family:var(--font-display), 'Bagel Fat One', system-ui, sans-serif;font-size:1.15rem;text-decoration:none;box-shadow:var(--lift,0 1px 0 rgb(42 24 66 / 0.18), 0 14px 28px -12px rgb(20 8 40 / 0.55));cursor:pointer;transition:transform .35s cubic-bezier(0.16,1,0.3,1),box-shadow .35s cubic-bezier(0.16,1,0.3,1);background:var(--pink,#f48caa);}.ds-btn:hover{transform:translateY(-2px) rotate(-1deg);box-shadow:var(--lift-hover,0 1px 0 rgb(42 24 66 / 0.18), 0 22px 36px -14px rgb(20 8 40 / 0.6));}.ds-btn:active{transform:translateY(1px);}.ds-btn:focus-visible{outline:3px solid var(--pink,#f48caa);outline-offset:3px;}"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "White vinyl sticker-button for the secondary action.",
+      "html": "<button class=\"ds-btn-quiet\">Visit Chog Park</button>",
+      "css": ".ds-btn-quiet{display:inline-flex;align-items:center;gap:10px;min-height:52px;padding:0 24px;border:4px solid var(--vinyl,#fff);border-radius:999px;color:var(--ink,#2a1842);font-family:var(--font-display), 'Bagel Fat One', system-ui, sans-serif;font-size:1.15rem;text-decoration:none;box-shadow:var(--lift,0 1px 0 rgb(42 24 66 / 0.18), 0 14px 28px -12px rgb(20 8 40 / 0.55));cursor:pointer;transition:transform .35s cubic-bezier(0.16,1,0.3,1),box-shadow .35s cubic-bezier(0.16,1,0.3,1);background:var(--vinyl,#fff);}.ds-btn-quiet:hover{transform:translateY(-2px) rotate(-1deg);box-shadow:var(--lift-hover,0 1px 0 rgb(42 24 66 / 0.18), 0 22px 36px -14px rgb(20 8 40 / 0.6));}.ds-btn-quiet:active{transform:translateY(1px);}.ds-btn-quiet:focus-visible{outline:3px solid var(--pink,#f48caa);outline-offset:3px;}"
+    },
+    {
+      "name": "Back Link",
+      "kind": "nav",
+      "refersTo": "label",
+      "description": "Mono print-code link with a drawn stroke arrow.",
+      "html": "<a class=\"ds-back\" href=\"#\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 7H2M6 3 2 7l4 4\"/></svg>Chog Buddy</a>",
+      "css": ".ds-back{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;background:var(--hood,#6c4ab6);color:var(--on-sheet-soft,#e7dcff);font-family:var(--font-mono), 'JetBrains Mono', ui-monospace, monospace;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;text-decoration:none;}.ds-back:hover{color:var(--on-sheet,#fffaf0);}.ds-back:focus-visible{outline:3px solid var(--pink,#f48caa);outline-offset:3px;border-radius:6px;}"
+    },
+    {
+      "name": "Demo Chip",
+      "kind": "chip",
+      "refersTo": "chip-demo",
+      "description": "Pink pill marking demo data next to a Chog name.",
+      "html": "<span class=\"ds-chip\">Demo</span>",
+      "css": ".ds-chip{display:inline-block;padding:3px 8px;border-radius:999px;background:var(--pink,#f48caa);color:var(--ink,#2a1842);font-family:var(--font-mono), 'JetBrains Mono', ui-monospace, monospace;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;}"
+    },
+    {
+      "name": "Note Sticker with Peel",
+      "kind": "card",
+      "refersTo": "sticker-note",
+      "description": "Cream promise sticker; the peeled corner marks waiting or unfinished state.",
+      "html": "<div class=\"ds-sheet\"><p class=\"ds-note\"><strong>Private by default.</strong> Your diary and chats stay on your computer.</p></div>",
+      "css": ".ds-sheet{padding:32px;background:var(--hood,#6c4ab6);}.ds-note{position:relative;max-width:44ch;padding:14px 56px 14px 18px;border-radius:22px;background:var(--cream,#f6e9c7);color:var(--ink,#2a1842);font-family:var(--font-body),Rubik,system-ui,sans-serif;box-shadow:var(--lift,0 1px 0 rgb(42 24 66 / 0.18), 0 14px 28px -12px rgb(20 8 40 / 0.55));rotate:.8deg;}.ds-note strong{color:var(--hood-deep,#563a98);}.ds-note::after{content:'';position:absolute;right:0;bottom:0;width:46px;height:46px;border-bottom-right-radius:22px;background:linear-gradient(315deg,var(--hood,#6c4ab6) 0 48%,transparent 49%),linear-gradient(135deg,#fff 0 30%,#e9e2f5 52%,#cfc4e6 58%,transparent 59%);filter:drop-shadow(-3px -3px 4px rgb(20 8 40 / .25));}"
+    },
+    {
+      "name": "Album Sticker",
+      "kind": "card",
+      "refersTo": "sticker",
+      "description": "White die-cut sticker: art window, mood bubble, display name, mono print code, Soul bar.",
+      "html": "<article class=\"ds-album\"><div class=\"ds-art\"></div><p class=\"ds-mood\">The code flows like a river.</p><h3 class=\"ds-name\">Chog #77</h3><p class=\"ds-code\">#77 · Lazy Sage · Lv 12</p><div class=\"ds-axis\"><span>Grinder</span><span class=\"ds-track\"><span class=\"ds-bar\" style=\"width:88%\"></span><span class=\"ds-val\">88</span></span></div></article>",
+      "css": ".ds-album{display:flex;flex-direction:column;gap:10px;width:240px;padding:12px 12px 16px;border-radius:22px;background:var(--vinyl,#fff);color:var(--ink,#2a1842);font-family:var(--font-body),Rubik,system-ui,sans-serif;box-shadow:var(--lift,0 1px 0 rgb(42 24 66 / 0.18), 0 14px 28px -12px rgb(20 8 40 / 0.55));rotate:-2deg;transition:rotate .5s cubic-bezier(0.16,1,0.3,1),translate .5s cubic-bezier(0.16,1,0.3,1);}.ds-album:hover{rotate:0deg;translate:0 -4px;}.ds-art{aspect-ratio:1;border-radius:14px;background:var(--cream,#f6e9c7);}.ds-mood{position:relative;margin:-34px 8px 0;padding:8px 12px;border-radius:14px;background:#fff;box-shadow:0 6px 14px -6px rgb(20 8 40 / .35);font-size:.92rem;font-weight:600;line-height:1.3;}.ds-name{margin:0;font-family:var(--font-display), 'Bagel Fat One', system-ui, sans-serif;font-weight:400;font-size:1.3rem;line-height:1.1;color:var(--hood-deep,#563a98);}.ds-code{margin:0;font-family:var(--font-mono), 'JetBrains Mono', ui-monospace, monospace;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:#4a3570;}.ds-axis{display:grid;grid-template-columns:5.5em 1fr;align-items:center;gap:8px;font-size:.82rem;font-weight:600;}.ds-track{position:relative;display:flex;height:14px;border-radius:999px;background:#efe6fb;}.ds-bar{height:100%;border-radius:999px;background:var(--hood,#6c4ab6);}.ds-val{position:absolute;right:6px;top:0;font-family:var(--font-mono), 'JetBrains Mono', ui-monospace, monospace;font-size:.66rem;line-height:14px;font-weight:400;}"
+    },
+    {
+      "name": "Holo Leaderboard",
+      "kind": "custom",
+      "refersTo": "sticker",
+      "description": "The one foil surface: pastel holo gradient behind a white border.",
+      "html": "<section class=\"ds-foil\"><h2>Today’s focus leaderboard</h2><ol><li><b>1</b><span>Chog #412</span><em>140 min</em></li><li><b>2</b><span>Chog #77</span><em>95 min</em></li></ol></section>",
+      "css": ".ds-foil{width:360px;padding:22px 24px 18px;border:6px solid #fff;border-radius:22px;color:var(--ink,#2a1842);rotate:1.2deg;box-shadow:var(--lift,0 1px 0 rgb(42 24 66 / 0.18), 0 14px 28px -12px rgb(20 8 40 / 0.55));background:linear-gradient(115deg,rgb(255 255 255 / .65),rgb(255 255 255 / 0) 35%,rgb(255 255 255 / .5) 62%,rgb(255 255 255 / 0) 80%),linear-gradient(100deg,#f6c9e2,#ddd3ff 25%,#c9ecff 48%,#fff0bf 70%,#f6c9e2);font-family:var(--font-body),Rubik,system-ui,sans-serif;}.ds-foil h2{margin:0;font-family:var(--font-display), 'Bagel Fat One', system-ui, sans-serif;font-weight:400;font-size:1.6rem;line-height:1.1;}.ds-foil ol{list-style:none;margin:14px 0 0;padding:0;}.ds-foil li{display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px dashed rgb(42 24 66 / .25);}.ds-foil b{width:1.6em;font-family:var(--font-display), 'Bagel Fat One', system-ui, sans-serif;font-weight:400;font-size:1.4rem;color:var(--hood-deep,#563a98);}.ds-foil span{flex:1;font-weight:600;}.ds-foil em{font-style:normal;font-family:var(--font-mono), 'JetBrains Mono', ui-monospace, monospace;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;}"
+    },
+    {
+      "name": "Sheet Lettering",
+      "kind": "custom",
+      "refersTo": "display",
+      "description": "Fat display lettering with white kiss-cut outline on the sheet.",
+      "html": "<div class=\"ds-lsheet\"><h1 class=\"ds-lettering\">Chog Park</h1></div>",
+      "css": ".ds-lsheet{padding:32px;background-color:var(--hood,#6c4ab6);background-image:linear-gradient(rgb(255 255 255 / .09) 1px,transparent 1px),linear-gradient(90deg,rgb(255 255 255 / .09) 1px,transparent 1px);background-size:28px 28px;}.ds-lettering{margin:0;font-family:var(--font-display), 'Bagel Fat One', system-ui, sans-serif;font-weight:400;font-size:4.5rem;line-height:.95;letter-spacing:-.01em;color:var(--letter,#2a1842);-webkit-text-stroke:.16em #fff;paint-order:stroke fill;text-shadow:0 .09em .12em rgb(20 8 40 / .35);}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Kiss-Cut Sticker Sheet",
+    "overview": "**Creative North Star: \"The Kiss-Cut Sticker Sheet\"**\n\nThe page is a vinyl backing sheet printed with a fine liner grid, and everything on it is a die-cut sticker: white vinyl border, soft lift off the sheet, slightly tilted as if pressed on by hand. The pixel Chog is the hero sticker, cut out along its own pixels with a thick white border. Lettering is fat, rounded and outlined in white like a sticker title; small mono caps act as the sheet's print codes (token ids, levels, platforms).\n\nThe palette is the official Chog art, nothing else: hood purple, cream, blush pink and ink, plus the white of the vinyl. State is shown as a mark, not a hue: a peeled corner means waiting or unfinished, flat means done. The single exception to the four-ink sheet is holo foil, reserved for the one leaderboard strip, where the sheen turns as the page scrolls.\n\nDensity is loose and playful. Large rotations stay small (roughly -5deg to +8deg on scattered stickers, -3deg to +3deg in grids), and hover straightens a sticker rather than tilting it further.",
+    "keyCharacteristics": [
+      "Gridded hood-purple backing sheet (ink at night), 28px liner grid.",
+      "White vinyl stickers with a soft two-layer lift shadow and 22px corners.",
+      "Pixel sprites cut out with a 5px white outline that follows the pixels.",
+      "Bagel Fat One lettering, white-stroked via paint-order, ink drop shadow.",
+      "JetBrains Mono uppercase print codes.",
+      "Peeled corner = waiting; flat = done.",
+      "Holo foil on exactly one surface: the leaderboard."
+    ],
+    "rules": [
+      {
+        "name": "The Four Inks Rule",
+        "body": "New color comes from hood, cream, pink or ink, or a tint of them made for legibility. No blue, green or gradient accents on the sheet.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Foil Rule",
+        "body": "The holo foil gradient (pink, lilac, sky, butter, turning with `--sheen`, plus a soft-light grain) lives on the leaderboard strip only. A second foil surface cheapens the first.",
+        "section": "colors"
+      },
+      {
+        "name": "The Outline Needs a Sheet Rule",
+        "body": "The white lettering outline only appears where it cuts against the purple or ink sheet. On white vinyl, lettering goes flat hood-deep.",
+        "section": "typography"
+      },
+      {
+        "name": "The Print Code Rule",
+        "body": "Numbers and identifiers (token id, level, minutes, Soul values) are set in the mono label; prose is never set in mono.",
+        "section": "typography"
+      },
+      {
+        "name": "The Peel Means Waiting Rule",
+        "body": "The peeled corner (a 46px curled flap showing the sheet through) marks something unfinished or in progress. On /connect the flap animates while the wallet is open and disappears when done. Use it for state, not decoration on every card.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do put every piece of content on a sticker or directly on the sheet; stickers get white vinyl, 22px corners and the Lift shadow.",
+      "Do tilt hand-placed stickers by small amounts (within about ±8deg) and straighten them on hover.",
+      "Do use the peeled corner only for waiting or unfinished state, and remove it when done.",
+      "Do set identifiers and numbers in the uppercase mono label.",
+      "Do draw icons as inline SVG strokes at 2px with round caps.",
+      "Do keep the one authored motion moment per page short and on the shared ease `cubic-bezier(0.16, 1, 0.3, 1)`, and collapse motion under reduced-motion."
+    ],
+    "donts": [
+      "Don't add colors outside the four Chog inks and their legibility tints.",
+      "Don't use holo foil anywhere except the leaderboard strip.",
+      "Don't use the white lettering outline on white vinyl.",
+      "Don't use Unicode glyphs as icons.",
+      "Don't redraw or vectorise the Chog; use sprite-kit renders.",
+      "Don't set prose in mono or numbers in the display face outside ranks and names."
+    ]
+  }
+}
