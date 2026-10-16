@@ -103,6 +103,40 @@ function geminiKey(): string | null {
 // Null in Judge Mode or when signed out. The backend treats a bad token as none (per-IP caps), so chat never breaks.
 const currentToken = () => (judge || !settings.session ? null : unseal(cipher, settings.session.tokenEnc));
 
+let dialogHost: BrowserWindow | null = null;
+let boxesOpen = 0;
+
+// Every message box goes through here. It is owned by a tiny always-on-top window (the pet is not focusable, so it
+// cannot own one): a modal with an always-on-top owner stays above the browser, even where Windows blocks focus-stealing.
+async function box(opts: Electron.MessageBoxOptions): Promise<Electron.MessageBoxReturnValue> {
+  if (!dialogHost || dialogHost.isDestroyed()) {
+    const a = screen.getPrimaryDisplay().workArea;
+    const w = new BrowserWindow({
+      width: 1, height: 1, x: Math.round(a.x + a.width / 2), y: Math.round(a.y + a.height / 2), show: false, title: 'Chog Buddy',
+      frame: false, transparent: true, resizable: false, hasShadow: false, skipTaskbar: true, focusable: true,
+    });
+    w.webContents.on('will-navigate', (e) => e.preventDefault());
+    w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); // macOS: above a full-screen browser too
+    w.on('closed', () => { dialogHost = null; });
+    dialogHost = w;
+  }
+  const host = dialogHost;
+  boxesOpen++;
+  try {
+    host.setAlwaysOnTop(true, 'screen-saver');
+    host.show();
+    host.moveTop();
+    host.focus();
+    app.focus({ steal: true });
+    // macOS: a sheet begun in the same tick as show() pins host and sheet to the desktop Space, behind a full-screen browser.
+    await new Promise((r) => setTimeout(r, 50));
+    return await dialog.showMessageBox(host, { title: 'Chog Buddy', ...opts });
+  } finally {
+    if (--boxesOpen === 0 && !host.isDestroyed()) host.hide(); // another box may still be open on it
+  }
+}
+
 function openChat(mode: ChatMode) {
   if (!win) return;
   secretMode = mode;
@@ -110,7 +144,7 @@ function openChat(mode: ChatMode) {
   if (!chatOpen) win.setBounds({ x: b.x, y: b.y + b.height - CHAT_H, width: W, height: CHAT_H });
   chatOpen = true;
   win.setFocusable(true);
-  if (process.platform === 'darwin') app.focus({ steal: true });
+  app.focus({ steal: true });
   win.focus();
   win.webContents.send('chat-open', { mode });
 }
@@ -399,7 +433,7 @@ function sendHistory() {
 }
 
 function openHistory() {
-  if (process.platform === 'darwin') app.focus({ steal: true });
+  app.focus({ steal: true });
   if (historyWin) {
     historyWin.focus();
     return;
@@ -417,6 +451,7 @@ function openHistory() {
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
 app.dock?.hide();
+if (process.platform === 'win32') app.setAppUserModelId('xyz.chog.buddy'); // = appId in package.json: notifications say "Chog Buddy"
 
 async function loadChog(tokenId: number): Promise<ChogMetadata> {
   let lastErr: unknown;
@@ -457,12 +492,11 @@ function groundY(area: Electron.Rectangle) {
 
 // Drives the native startup dialogs. Returns the Chog to show, or null to quit.
 async function resolveChoice(choice: Startup, base: string): Promise<{ tokenId: number; judge: boolean } | null> {
-  if (process.platform === 'darwin') app.focus({ steal: true });
   for (;;) {
     if (choice.kind === 'pet') return { tokenId: choice.tokenId, judge: choice.judge };
     if (choice.kind === 'pick') {
       const ids = choice.tokenIds.slice(0, 8);
-      const r = await dialog.showMessageBox({
+      const r = await box({
         message: 'Which Chog should live on your desktop?',
         ...(choice.tokenIds.length > 8 ? { detail: 'Showing your first 8 Chogs.' } : {}),
         buttons: [...ids.map((id) => `Chog #${id}`), 'Quit'],
@@ -472,7 +506,7 @@ async function resolveChoice(choice: Startup, base: string): Promise<{ tokenId: 
       return { tokenId: ids[r.response], judge: false };
     }
     const intro = choice.kind === 'no-chog' ? 'This wallet holds no Chog Genesis NFT.' : 'Chog Buddy needs a Chog Genesis NFT.';
-    const r = await dialog.showMessageBox({ message: intro, detail: 'Sign in with the wallet that holds your Chog, or try the labelled demo Chog (Judge Mode).', buttons: ['Sign in with wallet', 'Judge Mode (demo Chog)', 'Quit'], cancelId: 2 });
+    const r = await box({ message: intro, detail: 'Sign in with the wallet that holds your Chog, or try the labelled demo Chog (Judge Mode).', buttons: ['Sign in with wallet', 'Judge Mode (demo Chog)', 'Quit'], cancelId: 2 });
     if (r.response === 2) return null;
     if (r.response === 1) {
       settings.judgeMode = true;
@@ -490,7 +524,7 @@ async function resolveChoice(choice: Startup, base: string): Promise<{ tokenId: 
       if (owned) checkLost(owned);
       choice = owned === null ? { kind: 'choose' } : chooseStartup({ judgeMode: false, signedIn: true, owned, savedTokenId: null });
     } catch (e) {
-      await dialog.showMessageBox({ type: 'warning', message: `Sign-in failed: ${(e as Error).message}` });
+      await box({ type: 'warning', message: `Sign-in failed: ${(e as Error).message}` });
       choice = { kind: 'choose' };
     }
   }
@@ -508,7 +542,7 @@ async function start() {
   const envTokenId = process.env.CHOG_TOKEN_ID ? Number(process.env.CHOG_TOKEN_ID) : undefined;
   const startup = chooseStartup({ envTokenId, judgeMode: settings.judgeMode, signedIn: !!sessionToken && !!settings.session, owned, savedTokenId: settings.session ? settings.tokenId : null });
   if (owned !== null && settings.tokenId && checkLost(owned)) {
-    await dialog.showMessageBox({ message: `Chog #${settings.tokenId} is no longer in your wallet, so its diary and chat history were cleared. Its Soul stays with the Chog.` });
+    await box({ message: `Chog #${settings.tokenId} is no longer in your wallet, so its diary and chat history were cleared. Its Soul stays with the Chog.` });
   }
   const choice = await resolveChoice(startup, base);
   if (!choice) {
@@ -544,6 +578,7 @@ async function start() {
   walk = { x: area.x + area.width / 2, dir: 1, pauseUntil: 0 };
 
   win = new BrowserWindow({
+    title: 'Chog Buddy',
     width: W,
     height: H,
     x: Math.round(walk.x),
@@ -655,7 +690,7 @@ async function start() {
       const expireSession = async () => {
         settings.session = null;
         saveSettings(userData, settings);
-        await dialog.showMessageBox({ message: 'Your sign-in expired. Chog Buddy will restart so you can sign in again.' });
+        await box({ message: 'Your sign-in expired. Chog Buddy will restart so you can sign in again.' });
         relaunch();
       };
       // Yesterday's final totals go up on the first tick after midnight, not at the next hourly slot.
@@ -687,7 +722,7 @@ async function start() {
         if (owned && checkLost(owned)) {
           settings.session = null;
           saveSettings(userData, settings);
-          await dialog.showMessageBox({ message: `Chog #${tokenId} left your wallet. Its diary and chat history were cleared. Restart Chog Buddy to choose again.` });
+          await box({ message: `Chog #${tokenId} left your wallet. Its diary and chat history were cleared. Restart Chog Buddy to choose again.` });
           app.quit();
           return;
         }
@@ -823,7 +858,7 @@ async function start() {
               dialog.showErrorBox('Chog Buddy', 'Export failed: ' + (e instanceof Error ? e.message : String(e)));
               return;
             }
-            dialog.showMessageBox({ message: 'Saved to ' + dir });
+            await box({ message: 'Saved to ' + dir });
           },
         },
         { type: 'separator' },
