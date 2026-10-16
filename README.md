@@ -96,21 +96,9 @@ The rule is that **the Soul is public, and the diary never leaves your computer*
 
 ## How it works
 
-```
-  Your computer                               Vercel (free tier)                   Monad
- ┌──────────────────────────────┐   HTTPS   ┌─────────────────────────────┐
- │ Electron Pet (app/)          │ ────────▶ │ Next.js API (web/)          │  ownerOf ─▶ Chog Genesis (mainnet)
- │  • reads the front app name  │           │  • wallet sign-in (SIWE)    │
- │  • categorises it locally    │           │  • ownership checks         │  write   ─▶ ChogSoul (testnet)
- │  • pixel sprite + skins      │           │  • chat + diary (Gemini,    │
- │  • diary + chats (local,     │           │    free backups)            │  settle  ─▶ FocusPool (testnet)
- │    encrypted)                │           │  • daily Soul cron          │
- │  • Focus Bets reporter       │           │  • Chog Park, bet page      │
- └──────────────┬───────────────┘           └──────────────┬──────────────┘
-                │ loopback 127.0.0.1                        │ Neon Postgres (free):
-                ▼                                           ▼ category minutes, Soul mirror, usage counts
-          Browser: /connect (sign-in), /focus (bets)
-```
+![Architecture](docs/diagrams/architecture.png)
+
+The full explanation is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): the privacy boundary, the daily Soul update, the Focus Bets flow and chat.
 
 - **`packages/core`:** pure, tested logic shared by the app and the server. It covers categorising apps, Archetypes from traits, the Soul drift formula and the pixel sprite kit (canonical Chog, skins, expressions, sprite atlas).
 - **`app`:** the Electron Pet. It samples the foreground app every 5 s, keeps today's category minutes and uploads them hourly. It also re-checks ownership daily, runs chat, the diary and reactions, and talks to the browser over a short-lived loopback server for sign-in and Focus Bets.
@@ -139,6 +127,20 @@ The Focus Bets contracts are verified on Sourcify. Deployment details are in [co
 | Chat models | Gemini free tier, with free Groq and OpenRouter backups, or local Ollama |
 | Art | Drawn in code: the sprites come from our own pixel kit, with no paid or AI-generated art |
 
+## What's next
+
+The plans are in [docs/ROADMAP.md](docs/ROADMAP.md):
+- signed installers
+- MCP for Claude Desktop
+- an offline brain
+- a **3D Chog**
+- a phone companion
+- Chog visits and tips
+- Chog FC
+- real $CHOG Focus Bets on mainnet
+
+![Roadmap](docs/diagrams/roadmap.png)
+
 ## Run from source
 
 Requirements: Node 24, plus Foundry if you want the contracts.
@@ -165,7 +167,7 @@ app/         Electron Pet (main process, renderer, tests)
 web/         Next.js API + /, /connect, /focus, /park
 packages/    @chog/core: shared logic and the pixel sprite kit
 contracts/   Foundry: ChogSoul, FocusPool, MockChog
-docs/adr/    Architecture decisions and why we made them
+docs/        ARCHITECTURE.md, ROADMAP.md, diagrams/, adr/ (decisions and why)
 CONTEXT.md   Shared vocabulary (Chog, Pet, Soul, Archetype, Activity…)
 ```
 

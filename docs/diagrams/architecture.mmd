@@ -1,0 +1,24 @@
+graph LR
+  subgraph PC["Your computer"]
+    PET["Chog Buddy app<br/>(Electron)"]
+    LOCAL[("Diary + chats<br/>local, encrypted")]
+    BROWSER["Browser<br/>/connect · /focus"]
+  end
+  subgraph VERCEL["Vercel (free)"]
+    API["Next.js API<br/>sign-in · chat · diary<br/>Soul cron · bets"]
+    DB[("Neon Postgres<br/>category minutes")]
+  end
+  subgraph MONAD["Monad"]
+    GEN["Chog Genesis<br/>mainnet"]
+    SOUL["ChogSoul<br/>testnet"]
+    POOL["FocusPool<br/>testnet"]
+  end
+  PET --- LOCAL
+  BROWSER -- "session / bet key<br/>127.0.0.1" --> PET
+  PET -- "HTTPS" --> API
+  BROWSER -- "SIWE · stake" --> API
+  API --- DB
+  API -- "ownerOf" --> GEN
+  API -- "daily Soul write" --> SOUL
+  API -- "settle" --> POOL
+  BROWSER -- "approve · stake · claim" --> POOL

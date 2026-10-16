@@ -1,0 +1,16 @@
+sequenceDiagram
+  participant P as Chog Buddy app
+  participant B as Bet page
+  participant S as Server
+  participant C as FocusPool
+  P->>B: open /focus?port&state
+  B->>P: GET /focus (app answers)
+  B->>C: approve + stake(goal, hash(key))
+  B->>P: POST bet id + key
+  loop every 30 s
+    P->>S: progress(focus minutes)
+    S-->>P: Open / Won
+  end
+  S->>C: settle Won
+  P->>P: celebrate + notify
+  B->>C: claim stake + bonus
