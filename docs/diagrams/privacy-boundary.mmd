@@ -1,0 +1,8 @@
+graph LR
+  APP["Front app name<br/>every 5 s"] --> CAT["Categorize<br/>on device"]
+  CAT --> MIN["Category minutes<br/>coding 120 · video 45"]
+  CAT -. "never leaves" .-> NAMES["App names<br/>window titles"]
+  MIN -- "hourly upload" --> SRV["Server"]
+  SRV --> SOULW["Soul axes<br/>onchain, public"]
+  SRV -- "diary text sent back,<br/>never stored" --> DIARY["Diary<br/>your computer only"]
+  CHAT["Chat history"] -. "encrypted,<br/>never uploaded" .-> DIARY
