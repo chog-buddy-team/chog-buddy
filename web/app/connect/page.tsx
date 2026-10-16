@@ -50,7 +50,7 @@ export default function Connect() {
       }).catch(() => null);
       if (!cb) throw new Error('Could not reach the Chog Buddy app. Is it still open? Start sign-in again from the app.');
       if (!cb.ok) throw new Error('The app did not accept this sign-in. Start sign-in again from the app.');
-      setStatus('Done! Go back to your desktop — your Chog is waking up.');
+      setStatus('Done! Switch back to Chog Buddy to finish.');
       setPhase('done');
     } catch (e) {
       const err = e as { shortMessage?: string; message?: string } | undefined;

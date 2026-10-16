@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampX, stepWalk } from '../src/main/walker';
+import { clampToArea, clampX, inArea, stepWalk } from '../src/main/walker';
 
 const never = () => 0.5; // never triggers a pause
 
@@ -26,5 +26,33 @@ describe('clampX', () => {
     expect(clampX(-300, 0, 500)).toBe(0);
     expect(clampX(9000, 0, 500)).toBe(500);
     expect(clampX(42, 0, 500)).toBe(42);
+  });
+});
+
+describe('clampToArea', () => {
+  const area = { x: 0, y: 25, width: 1000, height: 800 };
+  const size = { width: 192, height: 260 };
+  it('leaves a rect that fits where it is', () => {
+    expect(clampToArea({ x: 300, y: 200 }, size, area)).toEqual({ x: 300, y: 200 });
+  });
+  it('pulls every edge back inside', () => {
+    expect(clampToArea({ x: -50, y: 0 }, size, area)).toEqual({ x: 0, y: 25 });
+    expect(clampToArea({ x: 900, y: 700 }, size, area)).toEqual({ x: 808, y: 565 });
+  });
+  it('works on a display left of and above the primary', () => {
+    expect(clampToArea({ x: -100, y: -2000 }, size, { x: -1920, y: -1080, width: 1920, height: 1080 })).toEqual({ x: -192, y: -1080 });
+  });
+  it('pins a rect bigger than the area to its top-left', () => {
+    expect(clampToArea({ x: 50, y: 50 }, { width: 2000, height: 2000 }, area)).toEqual({ x: 0, y: 25 });
+  });
+});
+
+describe('inArea', () => {
+  const area = { x: 0, y: 25, width: 1000, height: 800 };
+  it('includes the top-left edge and excludes the far edges', () => {
+    expect(inArea({ x: 0, y: 25 }, area)).toBe(true);
+    expect(inArea({ x: 999, y: 824 }, area)).toBe(true);
+    expect(inArea({ x: 1000, y: 100 }, area)).toBe(false);
+    expect(inArea({ x: 100, y: 24 }, area)).toBe(false);
   });
 });

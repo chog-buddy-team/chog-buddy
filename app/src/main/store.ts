@@ -20,6 +20,8 @@ export type Settings = {
   yesterday: { day: string; totals: DailyTotals } | null;
   skin: SkinId;
   focusBet: FocusBet | null; // the open Focus Bet, if any; its key is sealed
+  movement: 'walk' | 'stay'; // stay: never walks, rests where it was dropped
+  stayPos: { x: number; y: number } | null; // the window's top-left in stay mode
 };
 
 const CHAT_DEFAULTS: ChatPrefs = { provider: 'auto', ollamaModel: 'llama3.2', geminiKeyEnc: null };
@@ -34,15 +36,20 @@ const savedBet = (v: unknown): FocusBet | null => {
   const minutesOk = typeof b.goalMinutes === 'number' && Number.isInteger(b.goalMinutes) && b.goalMinutes > 0;
   return { ...(b as FocusBet), deadline: deadlineOk ? b.deadline! : null, goal: goalOk ? b.goal! : null, goalMinutes: minutesOk ? b.goalMinutes! : null };
 };
+const savedPos = (v: unknown) => {
+  const p = plainObject(v) as { x?: unknown; y?: unknown };
+  return Number.isFinite(p.x) && Number.isFinite(p.y) ? { x: p.x as number, y: p.y as number } : null;
+};
 
 export function loadSettings(dir: string): Settings {
   const defaults: Settings = {
     tokenId: JUDGE_TOKEN_ID, focusMode: false, today: { day: dayKey(new Date()), totals: emptyTotals() }, chat: { ...CHAT_DEFAULTS },
     judgeMode: false, session: null, secrets: { githubEnc: null, icalEnc: null }, lastUpload: 0, lastOwnershipCheck: 0, yesterday: null, skin: 'classic', focusBet: null,
+    movement: 'walk', stayPos: null,
   };
   try {
     const saved = JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'));
-    return { ...defaults, ...saved, chat: { ...CHAT_DEFAULTS, ...plainObject(saved?.chat) }, secrets: { ...defaults.secrets, ...plainObject(saved?.secrets) }, skin: isSkinId(saved?.skin) ? saved.skin : 'classic', focusBet: savedBet(saved?.focusBet) };
+    return { ...defaults, ...saved, chat: { ...CHAT_DEFAULTS, ...plainObject(saved?.chat) }, secrets: { ...defaults.secrets, ...plainObject(saved?.secrets) }, skin: isSkinId(saved?.skin) ? saved.skin : 'classic', focusBet: savedBet(saved?.focusBet), movement: saved?.movement === 'stay' ? 'stay' : 'walk', stayPos: savedPos(saved?.stayPos) };
   } catch {
     return defaults;
   }
