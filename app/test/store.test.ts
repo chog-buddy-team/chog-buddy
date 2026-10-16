@@ -97,4 +97,18 @@ describe('settings store', () => {
     expect(load({ deadline: null, goal: 1.5, goalMinutes: 2.5 })).toMatchObject({ deadline: null, goal: null, goalMinutes: null });
     expect(load({ deadline: 5, goal: -1, goalMinutes: -3 })).toMatchObject({ deadline: 5, goal: null, goalMinutes: null });
   });
+  it('movement defaults to walk with no stayPos, round-trips, and invalid values fall back', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chog-'));
+    expect(loadSettings(dir)).toMatchObject({ movement: 'walk', stayPos: null });
+    saveSettings(dir, { ...loadSettings(dir), movement: 'stay', stayPos: { x: 300, y: -200 } });
+    expect(loadSettings(dir)).toMatchObject({ movement: 'stay', stayPos: { x: 300, y: -200 } });
+    for (const movement of ['run', 5, null, ['stay']]) {
+      writeFileSync(join(dir, 'settings.json'), JSON.stringify({ movement }));
+      expect(loadSettings(dir).movement).toBe('walk');
+    }
+    for (const stayPos of [null, 'x', [], 5, {}, { x: 1 }, { x: 'a', y: 2 }, { x: 1, y: null }]) {
+      writeFileSync(join(dir, 'settings.json'), JSON.stringify({ movement: 'stay', stayPos }));
+      expect(loadSettings(dir).stayPos).toBeNull();
+    }
+  });
 });

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { ARCHETYPES, SKIN_IDS, categorize, fetchChogMetadata, ipfsToHttp, pickArchetype, type ArchetypeId, type ChogMetadata } from '@chog/core';
 import type { ChatMode } from '../preload';
-import { clampX, stepWalk, type WalkState } from './walker';
+import { clampToArea, clampX, inArea, stepWalk, type WalkState } from './walker';
 import { loadSettings, saveSettings, type Settings } from './store';
 import { apiUrl, FOCUS_SITE } from './config';
 import { ApiError, createApi } from './api';
@@ -56,6 +56,7 @@ let talkUntil = 0;
 let lastAnimKey = '';
 const CHAT_H = 420;
 let chatOpen = false;
+let chatAnchor = { x: 0, y: 0 }; // the pet's top-left while the chat makes the window taller; closeChat returns here
 let inFlightChat = false;
 let chat: ChatSession | null = null;
 let ollamaModels: string[] = [];
@@ -137,11 +138,53 @@ async function box(opts: Electron.MessageBoxOptions): Promise<Electron.MessageBo
   }
 }
 
+// The chat grows the window upward from the pet's spot, clamped so all of it stays on screen.
+function chatBounds(p: { x: number; y: number }): Electron.Rectangle {
+  const size = { width: W, height: CHAT_H };
+  const q = clampToArea({ x: p.x, y: p.y + H - CHAT_H }, size, screen.getDisplayMatching({ ...p, width: W, height: H }).workArea);
+  return { x: Math.round(q.x), y: Math.round(q.y), ...size };
+}
+
+// The pet's own top-left, and moving it there: with the chat open the window is taller, so both go through chatAnchor.
+function petPos() {
+  if (chatOpen || !win) return chatAnchor;
+  const [x, y] = win.getPosition();
+  return { x, y };
+}
+function place(p: { x: number; y: number }) {
+  if (chatOpen) { chatAnchor = p; win?.setBounds(chatBounds(p)); }
+  else win?.setPosition(Math.round(p.x), Math.round(p.y));
+}
+
+// Where a dropped or switched Chog comes to rest. Walk: the ground below. Stay: right here, fully on screen.
+function settle() {
+  if (!win) return;
+  const p = petPos();
+  if (settings.movement === 'walk') {
+    const a = workAreaFor(p.x, p.y);
+    walk = { ...walk, x: clampX(p.x, a.x, a.x + a.width - W) };
+    place({ x: Math.round(walk.x), y: groundY(a) });
+  } else {
+    const q = clampToArea(p, { width: W, height: H }, screen.getDisplayMatching({ ...p, width: W, height: H }).workArea);
+    settings.stayPos = { x: Math.round(q.x), y: Math.round(q.y) };
+    place(settings.stayPos);
+  }
+  saveNow();
+}
+
+function setMovement(m: Settings['movement']) {
+  settings.movement = m;
+  perch = null;
+  settle(); // stay keeps the current spot; walk drops to the ground below it
+}
+
 function openChat(mode: ChatMode) {
   if (!win) return;
   secretMode = mode;
-  const b = win.getBounds();
-  if (!chatOpen) win.setBounds({ x: b.x, y: b.y + b.height - CHAT_H, width: W, height: CHAT_H });
+  if (!chatOpen) {
+    chatAnchor = petPos();
+    win.setBounds(chatBounds(chatAnchor));
+  }
   chatOpen = true;
   win.setFocusable(true);
   app.focus({ steal: true });
@@ -151,8 +194,7 @@ function openChat(mode: ChatMode) {
 
 function closeChat() {
   if (!win || !chatOpen) return;
-  const b = win.getBounds();
-  win.setBounds({ x: b.x, y: b.y + b.height - H, width: W, height: H });
+  win.setBounds({ ...chatAnchor, width: W, height: H }); // the exact spot it had before opening: stay mode never drifts
   chatOpen = false;
   win.setFocusable(false);
   win.blur();
@@ -576,13 +618,24 @@ async function start() {
 
   const area = screen.getPrimaryDisplay().workArea;
   walk = { x: area.x + area.width / 2, dir: 1, pauseUntil: 0 };
+  let pos = { x: Math.round(walk.x), y: groundY(area) };
+  if (settings.movement === 'stay') {
+    const saved = settings.stayPos;
+    const home = saved && screen.getAllDisplays().find((d) => inArea(saved, d.workArea));
+    if (saved && home) {
+      const q = clampToArea(saved, { width: W, height: H }, home.workArea);
+      pos = { x: Math.round(q.x), y: Math.round(q.y) };
+    }
+    settings.stayPos = pos; // off every display (or never set): the default spot
+    saveNow();
+  }
 
   win = new BrowserWindow({
     title: 'Chog Buddy',
     width: W,
     height: H,
-    x: Math.round(walk.x),
-    y: groundY(area),
+    x: pos.x,
+    y: pos.y,
     transparent: true,
     frame: false,
     resizable: false,
@@ -605,8 +658,9 @@ async function start() {
     const dt = now - last;
     last = now;
     if (!win) return;
+    const stay = settings.movement === 'stay'; // idles, sleeps, reacts and talks in place
     const choice = chooseAnimation({
-      now, walking: now >= walk.pauseUntil, dir: walk.dir, dragging,
+      now, walking: !stay && now >= walk.pauseUntil, dir: walk.dir, dragging,
       userIdleSec: powerMonitor.getSystemIdleTime(), reactUntil, talkUntil, mood, moodUntil,
     });
     const key = `${choice.anim}:${choice.paused}`;
@@ -614,7 +668,7 @@ async function start() {
       lastAnimKey = key;
       win.webContents.send('anim', { anim: choice.anim, paused: choice.paused });
     }
-    if (chatOpen) return;
+    if (chatOpen || stay) return;
     if (dragging || !choice.canWalk) return;
     if (perch && now > perch.until) perch = null;
     const [, curY] = win.getPosition();
@@ -672,8 +726,8 @@ async function start() {
     const b = w?.bounds;
     const [, py] = win!.getPosition();
     const pa = workAreaFor(walk.x, py);
-    const inArea = !!b && b.x >= pa.x && b.x + b.width <= pa.x + pa.width && b.y > pa.y + 20 && b.y < pa.y + pa.height;
-    if (r.trigger === 'category_switch' && b && inArea && b.width > W * 2 && Math.random() < 0.4) {
+    const onArea = !!b && b.x >= pa.x && b.x + b.width <= pa.x + pa.width && b.y > pa.y + 20 && b.y < pa.y + pa.height;
+    if (settings.movement === 'walk' && r.trigger === 'category_switch' && b && onArea && b.width > W * 2 && Math.random() < 0.4) {
       perch = { until: Date.now() + PERCH_MS, bounds: b };
     }
     } finally {
@@ -743,6 +797,19 @@ async function start() {
     void say('meeting_soon').catch(() => {});
   }, 60_000);
 
+  // A display went away: a Chog left off every screen comes back to the primary one.
+  screen.on('display-removed', () => {
+    if (!win || dragging) return;
+    const p = petPos();
+    const off = !screen.getAllDisplays().some((d) => inArea({ x: p.x + W / 2, y: p.y + H / 2 }, d.workArea));
+    if (off) {
+      const a = screen.getPrimaryDisplay().workArea;
+      perch = null;
+      place({ x: Math.round(a.x + a.width / 2), y: groundY(a) });
+    }
+    if (off || settings.movement === 'stay') settle(); // stay: also keeps stayPos in step if the OS moved the window
+  });
+
   tray = new Tray(nativeImage.createFromDataURL(TRAY_ICON));
   // Windows opens a tray's menu on right-click only; make a left-click open it too.
   if (process.platform === 'win32') tray.on('click', () => tray?.popUpContextMenu());
@@ -750,6 +817,15 @@ async function start() {
     tray!.setContextMenu(
       Menu.buildFromTemplate([
         { label: `${meta.name} · ${ARCHETYPES[archetype].name}${judge ? ' · Judge Mode (demo Chog)' : ''}`, enabled: false },
+        {
+          label: 'Movement',
+          submenu: (['walk', 'stay'] as const).map((m) => ({
+            label: m === 'walk' ? 'Walk around' : 'Stay where I put it',
+            type: 'radio' as const,
+            checked: settings.movement === m,
+            click: () => setMovement(m),
+          })),
+        },
         {
           label: 'Skin',
           submenu: SKIN_IDS.filter((id) => !(judge && id === 'nft')).map((id) => ({
@@ -902,10 +978,8 @@ ipcMain.on('drag-move', (e, p: { x: number; y: number }) => {
 });
 ipcMain.on('drag-end', (e) => {
   if (!win || e.sender !== win.webContents) return;
-  const [x, y] = win.getPosition();
-  const a = workAreaFor(x, y);
-  walk = { ...walk, x: clampX(x, a.x, a.x + a.width - W) };
-  win.setPosition(Math.round(walk.x), a.y + a.height - win.getBounds().height); // drop to the ground
+  if (chatOpen) { const b = win.getBounds(); chatAnchor = { x: b.x, y: b.y + b.height - H }; } // the pet sits at the window's bottom
+  settle(); // walk: drop to the ground and walk on; stay: rest exactly here
   dragging = false;
 });
 
